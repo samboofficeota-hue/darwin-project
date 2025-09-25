@@ -1,0 +1,1015 @@
+# Web Search using GenSpark SDK - First Execution
+# Importing required modules and defining functions
+import json
+import os
+import uuid
+from typing import Dict, Any, Tuple
+from genspark_sdk import GenSparkSDK
+
+
+async def perform_web_search(query: str, num_results: int = 10, verbose: bool = False) -> Dict[str, Any]:
+    """
+    Perform a web search using GenSpark SDK.
+
+    Args:
+        query: The search query string
+        num_results: Maximum number of results to return (default: 10)
+        verbose: Enable verbose logging for debugging (default: False)
+
+    Returns:
+        Dictionary containing search results or error information
+    """
+    try:
+        # Execute search using SDK with optional verbose logging
+        async with GenSparkSDK(verbose=verbose) as sdk_client:
+            result = await sdk_client.web_search(q=query)
+
+        # Parse result if it's a string
+        if isinstance(result, str):
+            result_data = json.loads(result)
+        else:
+            result_data = result
+
+        # Process results
+        if isinstance(result_data, dict):
+            # Extract and limit organic results if needed
+            organic_results = result_data.get('organic_results', [])
+            actual_count = len(organic_results)
+
+            if actual_count > num_results:
+                result_data['organic_results'] = organic_results[:num_results]
+                result_data['_truncated'] = True
+                result_data['_original_count'] = actual_count
+            else:
+                result_data['_truncated'] = False
+                result_data['_original_count'] = actual_count
+
+            return result_data
+        else:
+            # Unexpected result type
+            return {
+                "error": f"Unexpected result type: {type(result_data)}",
+                "status": "error",
+                "raw_result": result_data,
+                "query": query
+            }
+
+    except Exception as e:
+        # Return error as structured data
+        return {
+            "error": str(e),
+            "status": "failed",
+            "query": query,
+            "search_metadata": {
+                "status": "Error",
+                "error_type": type(e).__name__
+            }
+        }
+
+
+def save_results_to_file(result_data: Dict[str, Any], query: str) -> str:
+    """
+    Save search results to a JSON file in /tmp directory.
+
+    Args:
+        result_data: The search results dictionary
+        query: The original search query
+
+    Returns:
+        Path to the saved JSON file, or empty string if save failed
+    """
+    try:
+        # Use UUID for filename to avoid any sanitization issues
+        filename = f"web_search_{uuid.uuid4().hex}.json"
+        filepath = os.path.join("/tmp", filename)
+
+        # Save full results to file
+        with open(filepath, 'w', encoding='utf-8') as f:
+            json.dump(result_data, f, indent=2, ensure_ascii=False)
+
+        return filepath
+    except Exception as e:
+        print(f"Warning: Could not save results to file: {e}")
+        return ""
+
+
+def display_search_results(result_data: Dict[str, Any], query: str) -> str:
+    """
+    Display a summary of search results and save full data to file.
+
+    Args:
+        result_data: The search results dictionary
+        query: The original search query
+
+    Returns:
+        Path to the saved JSON file
+    """
+    if result_data.get("status") in ["failed", "error"]:
+        print(f"Error: Search failed for query '{query}'")
+        print(f"Error details: {result_data.get('error')}")
+        if result_data.get("raw_result"):
+            print(f"Raw result preview: {str(result_data.get('raw_result'))[:200]}...")
+        return ""
+
+    # Save full results to file
+    filepath = save_results_to_file(result_data, query)
+
+    # Display search summary
+    print("\n=== Search Results Summary ===")
+    search_params = result_data.get('search_parameters', {})
+    search_metadata = result_data.get('search_metadata', {})
+
+    print(f"Query: {search_params.get('q', query)}")
+    print(f"Status: {search_metadata.get('status', 'Success')}")
+
+    organic_results = result_data.get('organic_results', [])
+    total_results = len(organic_results)
+
+    if result_data.get('_truncated'):
+        print(f"Results: {total_results} (truncated from {result_data.get('_original_count', 0)})")
+    else:
+        print(f"Results: {total_results}")
+
+    # Display preview of top results (max 3)
+    if organic_results:
+        print("\n--- Top 3 Results Preview ---")
+        for i, res in enumerate(organic_results[:3], 1):
+            title = res.get('title', 'No title')
+            link = res.get('link', '')
+            print(f"{i}. {title[:80]}..." if len(title) > 80 else f"{i}. {title}")
+            if link:
+                print(f"   {link[:70]}..." if len(link) > 70 else f"   {link}")
+
+    # Show sample of result structure
+    if organic_results:
+        print("\n--- Sample Result Structure ---")
+        sample_result = organic_results[0]
+        # Show only keys and truncated values
+        print("Keys in each result:")
+        for key in list(sample_result.keys())[:5]:  # Show first 5 keys
+            value = sample_result[key]
+            if isinstance(value, str):
+                preview = value[:50] + "..." if len(value) > 50 else value
+                print(f"  - {key}: '{preview}'")
+            elif isinstance(value, (list, dict)):
+                print(f"  - {key}: {type(value).__name__} with {len(value)} items")
+            else:
+                print(f"  - {key}: {value}")
+
+        if len(sample_result.keys()) > 5:
+            print(f"  ... and {len(sample_result.keys()) - 5} more keys")
+
+    # Display related searches preview if available
+    related_searches = result_data.get('related_searches', [])
+    if related_searches:
+        print(f"\n--- Related Searches (showing {min(3, len(related_searches))} of {len(related_searches)}) ---")
+        for i, related in enumerate(related_searches[:3], 1):
+            query_text = related.get('query', '')
+            if query_text:
+                print(f"{i}. {query_text}")
+
+    return filepath
+
+
+print("[INFO] Web search functions initialized and ready to use")
+
+
+# Perform the search with the provided parameters
+async def _execute_search() -> Tuple[Dict[str, Any], str]:
+    """Execute the web search with the provided parameters.
+
+    Returns:
+        Tuple of (search_results, filepath)
+    """
+    print("Searching: " + "Genspark API documentation endpoints SDK integration guide")
+
+    # Get verbose setting from template parameter or default to False
+    verbose_mode = False
+    if verbose_mode:
+        print("[DEBUG] Verbose logging enabled for web search")
+
+    # Execute the search with verbose parameter
+    search_results = await perform_web_search("Genspark API documentation endpoints SDK integration guide", 10, verbose=verbose_mode)
+
+    # Display summary and save to file
+    filepath = display_search_results(search_results, "Genspark API documentation endpoints SDK integration guide")
+
+    # Show file location for future reference
+    if filepath:
+        print(f"\n[SAVED] Full results saved to: {filepath}")
+
+    return search_results, filepath
+
+# Execute the search and store results
+web_search_results, results_file_path = await _execute_search()
+[INFO] Web search functions initialized and ready to use
+Searching: Genspark API documentation endpoints SDK integration guide
+=== Search Results Summary ===
+Query: Genspark API documentation endpoints SDK integration guide
+Status: Success
+Results: 10
+
+--- Top 3 Results Preview ---
+1. Api Documentation Beginner Guides - Genspark
+   https://www.genspark.ai/spark/api-documentation-beginner-guides/e1edfa...
+2. Types Of Api Documentation - Genspark
+   https://www.genspark.ai/spark/types-of-api-documentation/5a053544-7b0a...
+3. Api Documentation Importance - Genspark
+   https://www.genspark.ai/spark/api-documentation-importance/688bfd1b-21...
+
+--- Sample Result Structure ---
+Keys in each result:
+  - position: 1
+  - title: 'Api Documentation Beginner Guides - Genspark'
+  - link: 'https://www.genspark.ai/spark/api-documentation-be...'
+  - snippet: 'Definition: API (Application Programming Interface...'
+  - date: 'Sep 10, 2025'
+  ... and 3 more keys
+
+--- Related Searches (showing 2 of 2) ---
+1. Genspark api documentation endpoints sdk integration guide github
+2. Genspark api documentation endpoints sdk integration guide example
+
+[SAVED] Full results saved to: /tmp/web_search_d31718bae3af4438a86acb124c50702e.json
+[2]
+# Web Search - Using existing functions
+print("[INFO] Using previously initialized web search functions")
+
+
+# Perform the search with the provided parameters
+async def _execute_search() -> Tuple[Dict[str, Any], str]:
+    """Execute the web search with the provided parameters.
+
+    Returns:
+        Tuple of (search_results, filepath)
+    """
+    print("Searching: " + "Cursor IDE extension development API integration best practices")
+
+    # Get verbose setting from template parameter or default to False
+    verbose_mode = False
+    if verbose_mode:
+        print("[DEBUG] Verbose logging enabled for web search")
+
+    # Execute the search with verbose parameter
+    search_results = await perform_web_search("Cursor IDE extension development API integration best practices", 10, verbose=verbose_mode)
+
+    # Display summary and save to file
+    filepath = display_search_results(search_results, "Cursor IDE extension development API integration best practices")
+
+    # Show file location for future reference
+    if filepath:
+        print(f"\n[SAVED] Full results saved to: {filepath}")
+
+    return search_results, filepath
+
+# Execute the search and store results
+web_search_results, results_file_path = await _execute_search()
+[INFO] Using previously initialized web search functions
+Searching: Cursor IDE extension development API integration best practices
+=== Search Results Summary ===
+Query: Cursor IDE extension development API integration best practices
+Status: Success
+Results: 10
+
+--- Top 3 Results Preview ---
+1. Mastering Cursor IDE: 10 Best Practices (Building a Daily Task ...
+   https://medium.com/@roberto.g.infante/mastering-cursor-ide-10-best-pra...
+2. Awesome Cursor Rules You Can Setup for Your Cursor AI IDE Now
+   https://apidog.com/blog/awesome-cursor-rules/
+3. How to Integrate Coding Cursor into Your Development Environment
+   https://www.sidetool.co/post/how-to-integrate-coding-cursor-into-your-...
+
+--- Sample Result Structure ---
+Keys in each result:
+  - position: 1
+  - title: 'Mastering Cursor IDE: 10 Best Practices (Building ...'
+  - link: 'https://medium.com/@roberto.g.infante/mastering-cu...'
+  - snippet: 'In this article, we'll walk through ten best pract...'
+  - date: 'Jun 18, 2025'
+  ... and 1 more keys
+
+--- Related Searches (showing 3 of 8) ---
+1. Cursor ide extension development api integration best practices github
+2. Cursor ide extension development api integration best practices java
+3. Best Cursor IDE extensions
+
+[SAVED] Full results saved to: /tmp/web_search_82cf08cd76ec4357aac0ac916f438392.json
+✅ 🔴 Research Genspark API endpoints and current documentation [completed] (ID: 1)
+🔄 🔴 Gather Cursor IDE integration patterns and best practices [in_progress] (ID: 2)
+⏳ 🔴 Structure comprehensive CSV with all integration components [pending] (ID: 3)
+⏳ 🟡 Add code examples and configuration details [pending] (ID: 4)
+⏳ 🟡 Include error handling patterns and best practices [pending] (ID: 5)
+⏳ 🔴 Validate and save final CSV file [pending] (ID: 6)
+[3]
+# Web Crawler (Raw Content) using GenSpark SDK - First Execution
+# Importing required modules and defining functions
+import json
+import os
+import uuid
+from typing import Dict, Any, Tuple
+from genspark_sdk import GenSparkSDK
+
+
+async def crawl_raw_content(url: str, verbose: bool = False) -> Dict[str, Any]:
+    """
+    Crawl a web page and extract raw content using crawler_new.
+
+    Args:
+        url: The URL to crawl
+        verbose: Enable verbose logging for debugging
+
+    Returns:
+        Dictionary containing the crawled content or error information
+    """
+    try:
+        # Execute crawler using SDK
+        async with GenSparkSDK(verbose=verbose) as sdk_client:
+            result = await sdk_client.crawler_new(url=url)
+
+        # Parse result if it's a string
+        if isinstance(result, str):
+            # The result is already the markdown content
+            return {
+                "status": "success",
+                "url": url,
+                "content": result,
+                "content_length": len(result),
+                "content_type": "markdown"
+            }
+        elif isinstance(result, dict):
+            # Result might be structured
+            return {
+                "status": "success",
+                "url": url,
+                "data": result,
+                "content_type": "structured"
+            }
+        else:
+            return {
+                "status": "error",
+                "url": url,
+                "error": f"Unexpected result type: {type(result)}",
+                "raw_result": str(result)[:500]
+            }
+
+    except Exception as e:
+        return {
+            "status": "failed",
+            "url": url,
+            "error": str(e),
+            "error_type": type(e).__name__
+        }
+
+
+def save_results_to_file(result_data: Dict[str, Any], url: str) -> str:
+    """
+    Save crawl results to a file in /tmp directory.
+
+    Args:
+        result_data: The crawl results dictionary
+        url: The original URL
+
+    Returns:
+        Path to the saved file, or empty string if save failed
+    """
+    try:
+        # Use UUID for filename to avoid any collision issues
+        file_id = uuid.uuid4().hex
+
+        # Determine file extension based on content
+        if result_data.get("content_type") == "markdown" and result_data.get("content"):
+            filename = f"crawler_raw_{file_id}.md"
+            filepath = os.path.join("/tmp", filename)
+
+            # Save markdown content
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(result_data["content"])
+        else:
+            # Save as JSON for structured or error data
+            filename = f"crawler_raw_{file_id}.json"
+            filepath = os.path.join("/tmp", filename)
+
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(result_data, f, indent=2, ensure_ascii=False)
+
+        return filepath
+    except Exception as e:
+        print(f"Warning: Could not save content to file: {e}")
+        return ""
+
+
+def display_results(result_data: Dict[str, Any], url: str) -> str:
+    """
+    Display a summary of crawl results and save full data to file.
+
+    Args:
+        result_data: The crawl results dictionary
+        url: The original URL
+
+    Returns:
+        Path to the saved file
+    """
+    if result_data.get("status") in ["failed", "error"]:
+        print(f"Error: Crawl failed for URL '{url}'")
+        print(f"Error details: {result_data.get('error')}")
+        if result_data.get("raw_result"):
+            print(f"Raw result preview: {result_data.get('raw_result')[:200]}...")
+        return ""
+
+    # Save full results to file
+    filepath = save_results_to_file(result_data, url)
+
+    # Display summary
+    print("\n=== Results Summary ===")
+    print(f"URL: {url}")
+    print(f"Status: {result_data.get('status', 'Success')}")
+
+    if result_data.get("content_type") == "markdown":
+        content = result_data.get("content", "")
+        content_length = len(content)
+        print(f"Content Type: Markdown")
+        print(f"Content Length: {content_length:,} characters")
+
+        # Show content preview
+        if content_length > 0:
+            # Extract first few lines for preview
+            lines = content.split('\n')
+            preview_lines = lines[:10]  # First 10 lines
+
+            print("\n--- Content Preview (first 10 lines) ---")
+            for line in preview_lines:
+                if len(line) > 100:
+                    print(f"{line[:100]}...")
+                else:
+                    print(line)
+
+            if len(lines) > 10:
+                print(f"... and {len(lines) - 10} more lines")
+
+            # Show some statistics
+            print("\n--- Content Statistics ---")
+            print(f"Total Lines: {len(lines)}")
+
+            # Count markdown elements
+            headings = sum(1 for line in lines if line.startswith('#'))
+            links = content.count('](')
+            code_blocks = content.count('```')
+            lists = sum(1 for line in lines if line.strip().startswith(('- ', '* ', '+ ', '1. ')))
+
+            if headings > 0:
+                print(f"Headings: {headings}")
+            if links > 0:
+                print(f"Links: {links}")
+            if code_blocks > 0:
+                print(f"Code blocks: {code_blocks // 2}")  # Divide by 2 for pairs
+            if lists > 0:
+                print(f"List items: {lists}")
+
+    elif result_data.get("content_type") == "structured":
+        data = result_data.get("data", {})
+        print(f"Content Type: Structured Data")
+        print(f"Data Keys: {list(data.keys())[:10]}")  # Show first 10 keys
+
+        # Show sample of the data structure
+        print("\n--- Data Structure Preview ---")
+        for key, value in list(data.items())[:5]:
+            if isinstance(value, str):
+                preview = value[:100] + "..." if len(value) > 100 else value
+                print(f"  {key}: '{preview}'")
+            elif isinstance(value, (list, dict)):
+                print(f"  {key}: {type(value).__name__} with {len(value)} items")
+            else:
+                print(f"  {key}: {value}")
+
+    return filepath
+
+
+print("[INFO] Crawler functions initialized and ready to use")
+
+
+# Perform the crawl with the provided parameters
+async def _execute_crawl() -> Tuple[Dict[str, Any], str]:
+    """Execute the web crawl with the provided parameters.
+
+    Returns:
+        Tuple of (crawl_results, filepath)
+    """
+    print("Crawling: " + "https://www.genspark.ai/spark/api-documentation-beginner-guides/e1edfa64-1f98-45b4-97b0-fc91be806c85")
+
+    # Get verbose setting
+    verbose_mode = False
+    if verbose_mode:
+        print("[DEBUG] Verbose logging enabled for crawler")
+
+    # Execute the crawl
+    crawl_results = await crawl_raw_content(
+        "https://www.genspark.ai/spark/api-documentation-beginner-guides/e1edfa64-1f98-45b4-97b0-fc91be806c85",
+        verbose=verbose_mode
+    )
+
+    # Display summary and save to file
+    filepath = display_results(crawl_results, "https://www.genspark.ai/spark/api-documentation-beginner-guides/e1edfa64-1f98-45b4-97b0-fc91be806c85")
+
+    # Show file location for future reference
+    if filepath:
+        print(f"\n[SAVED] Full content saved to: {filepath}")
+
+    return crawl_results, filepath
+
+# Execute the crawl and store results
+crawler_raw_results, content_file_path = await _execute_crawl()
+[INFO] Crawler functions initialized and ready to use
+Crawling: https://www.genspark.ai/spark/api-documentation-beginner-guides/e1edfa64-1f98-45b4-97b0-fc91be806c85
+=== Results Summary ===
+URL: https://www.genspark.ai/spark/api-documentation-beginner-guides/e1edfa64-1f98-45b4-97b0-fc91be806c85
+Status: success
+Content Type: Markdown
+Content Length: 34 characters
+
+--- Content Preview (first 10 lines) ---
+No content found or crawler failed
+
+--- Content Statistics ---
+Total Lines: 1
+
+[SAVED] Full content saved to: /tmp/crawler_raw_8f3a49735a71402690cb06d29ea84e60.md
+[4]
+# Web Search - Using existing functions
+print("[INFO] Using previously initialized web search functions")
+
+
+# Perform the search with the provided parameters
+async def _execute_search() -> Tuple[Dict[str, Any], str]:
+    """Execute the web search with the provided parameters.
+
+    Returns:
+        Tuple of (search_results, filepath)
+    """
+    print("Searching: " + "Genspark SDK Python installation usage code examples GitHub")
+
+    # Get verbose setting from template parameter or default to False
+    verbose_mode = False
+    if verbose_mode:
+        print("[DEBUG] Verbose logging enabled for web search")
+
+    # Execute the search with verbose parameter
+    search_results = await perform_web_search("Genspark SDK Python installation usage code examples GitHub", 15, verbose=verbose_mode)
+
+    # Display summary and save to file
+    filepath = display_search_results(search_results, "Genspark SDK Python installation usage code examples GitHub")
+
+    # Show file location for future reference
+    if filepath:
+        print(f"\n[SAVED] Full results saved to: {filepath}")
+
+    return search_results, filepath
+
+# Execute the search and store results
+web_search_results, results_file_path = await _execute_search()
+[INFO] Using previously initialized web search functions
+Searching: Genspark SDK Python installation usage code examples GitHub
+=== Search Results Summary ===
+Query: Genspark SDK Python installation usage code examples GitHub
+Status: Success
+Results: 10
+
+--- Top 3 Results Preview ---
+1. googleapis/python-genai: Google Gen AI Python SDK ... - GitHub
+   https://github.com/googleapis/python-genai
+2. Fundamentals of Spark with Python (using PySpark), code examples
+   https://github.com/tirthajyoti/Spark-with-Python
+3. How to Create an MCP Server and Client from Scratch: Tutorial Links
+   https://www.genspark.ai/spark/how-to-create-an-mcp-server-and-client-f...
+
+--- Sample Result Structure ---
+Keys in each result:
+  - position: 1
+  - title: 'googleapis/python-genai: Google Gen AI Python SDK ...'
+  - link: 'https://github.com/googleapis/python-genai'
+  - snippet: 'Google Gen AI Python SDK provides an interface for...'
+  - date: ''
+  ... and 3 more keys
+
+--- Related Searches (showing 3 of 8) ---
+1. Google Gen AI SDK Python
+2. GenAI Python example
+3. Google/genai SDK
+
+[SAVED] Full results saved to: /tmp/crawler_raw_bf7fc946df9d44cc9728dd2b36eca164.json
+✅ 🔴 Research Genspark API endpoints and current documentation [completed] (ID: 1)
+✅ 🔴 Gather Cursor IDE integration patterns and best practices [completed] (ID: 2)
+🔄 🔴 Structure comprehensive CSV with all integration components [in_progress] (ID: 3)
+⏳ 🟡 Add code examples and configuration details [pending] (ID: 4)
+⏳ 🟡 Include error handling patterns and best practices [pending] (ID: 5)
+⏳ 🔴 Validate and save final CSV file [pending] (ID: 6)
+Now I'll create the comprehensive CSV structure based on the research. Let me start building the CSV with all the necessary components for Genspark-Cursor IDE integration.
+
+[5]
+import pandas as pd
+import json
+from typing import List, Dict
+[6]
+# Create comprehensive integration data structure
+integration_data = []
+
+# 1. API Endpoints and Methods
+api_endpoints = [
+    {
+        "Category": "API Endpoints",
+        "Component": "Web Search",
+        "Description": "GenSpark web search API for retrieving search results",
+        "Code_Example": """async with GenSparkSDK() as sdk:
+    result = await sdk.web_search(q="search query")
+    parsed = json.loads(result) if isinstance(result, str) else result""",
+        "Configuration": "GENSPARK_API_KEY environment variable required",
+        "Notes": "Returns organic_results array with titles, links, snippets",
+        "Priority": "High"
+    },
+    {
+        "Category": "API Endpoints",
+        "Component": "Web Crawler",
+        "Description": "Extract raw content from web pages in markdown format",
+        "Code_Example": """async with GenSpark() as sdk:
+    content = await sdk.crawler_new(url="https://example.com")
+    # Returns markdown content string""",
+        "Configuration": "No additional config needed beyond API key",
+        "Notes": "Useful for documentation extraction and content analysis",
+        "Priority": "High"
+    },
+    {
+        "Category": "API Endpoints", 
+        "Component": "Q&A Crawler",
+        "Description": "Extract content and answer specific questions about web pages",
+        "Code_Example": """async with GenSparkSDK() as sdk:
+    result = await sdk.crawler_qa(
+        url="https://example.com",
+        questions=["What is the main topic?", "How do I install?"]
+    )""",
+        "Configuration": "Requires questions array parameter",
+        "Notes": "Returns structured answers to provided questions",
+        "Priority": "Medium"
+    }
+]
+
+# 2. Configuration Settings
+config_settings = [
+    {
+        "Category": "Configuration",
+        "Component": "Environment Setup",
+        "Description": "Essential environment variables and API configuration",
+        "Code_Example": """# .env file
+GENSPARK_API_KEY=your_api_key_here
+GENSPARK_BASE_URL=https://api.genspark.ai  # if custom endpoint needed""",
+        "Configuration": "Create .env file in project root or set system environment variables",
+        "Notes": "API key is mandatory for all SDK operations",
+        "Priority": "High"
+    },
+    {
+        "Category": "Configuration",
+        "Component": "SDK Initialization", 
+        "Description": "Proper SDK client initialization with async context manager",
+        "Code_Example": """from genspark_sdk import GenSparkSDK
+
+# Recommended: Use async context manager
+async with GenSparkSDK(verbose=False) as client:
+    # Perform operations
+    pass""",
+        "Configuration": "verbose=True for debugging, False for production",
+        "Notes": "Always use async context manager for proper resource cleanup",
+        "Priority": "High"
+    },
+    {
+        "Category": "Configuration",
+        "Component": "Cursor IDE Settings",
+        "Description": "VS Code/Cursor IDE workspace configuration for GenSpark integration",
+        "Code_Example": """{
+  "python.defaultInterpreterPath": "./venv/bin/python",
+  "python.terminal.activateEnvironment": true,
+  "files.associations": {
+    "*.genspark": "json"
+  }
+}""",
+        "Configuration": "Add to .vscode/settings.json in workspace",
+        "Notes": "Enables better Python environment and file type recognition",
+        "Priority": "Medium"
+    }
+]
+
+# Add all to main data
+integration_data.extend(api_endpoints)
+integration_data.extend(config_settings)
+
+print(f"Added {len(api_endpoints)} API endpoints and {len(config_settings)} configuration entries")
+print("Current total entries:", len(integration_data))
+Added 3 API endpoints and 3 configuration entries
+Current total entries: 6
+[7]
+# 3. Code Examples and Snippets
+code_examples = [
+    {
+        "Category": "Code Examples",
+        "Component": "Basic Search Implementation",
+        "Description": "Complete example of implementing web search in Cursor IDE",
+        "Code_Example": """import asyncio
+import json
+from genspark_sdk import GenSparkSDK
+
+async def search_with_genspark(query: str):
+    try:
+        async with GenSparkSDK() as sdk:
+            result = await sdk.web_search(q=query)
+            data = json.loads(result) if isinstance(result, str) else result
+            return data.get('organic_results', [])
+    except Exception as e:
+        print(f"Search error: {e}")
+        return []
+
+# Usage in Cursor IDE
+results = asyncio.run(search_with_genspark("Python tutorials"))""",
+        "Configuration": "Requires asyncio for synchronous execution contexts",
+        "Notes": "Wrap async calls with asyncio.run() for Cursor IDE compatibility",
+        "Priority": "High"
+    },
+    {
+        "Category": "Code Examples",
+        "Component": "Content Extraction",
+        "Description": "Extract and process web content for documentation analysis",
+        "Code_Example": """async def extract_documentation(url: str):
+    async with GenSparkSDK() as sdk:
+        content = await sdk.crawler_new(url=url)
+        
+        # Process markdown content
+        lines = content.split('\\n')
+        headers = [line for line in lines if line.startswith('#')]
+        
+        return {
+            'content': content,
+            'headers': headers,
+            'word_count': len(content.split())
+        }""",
+        "Configuration": "Process returned markdown content as needed",
+        "Notes": "Useful for extracting API documentation and tutorials",
+        "Priority": "Medium"
+    },
+    {
+        "Category": "Code Examples",
+        "Component": "Batch Processing",
+        "Description": "Process multiple URLs or queries efficiently",
+        "Code_Example": """import asyncio
+
+async def batch_search(queries: list):
+    async with GenSparkSDK() as sdk:
+        tasks = []
+        for query in queries:
+            task = sdk.web_search(q=query)
+            tasks.append(task)
+        
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        processed = []
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                processed.append({'query': queries[i], 'error': str(result)})
+            else:
+                data = json.loads(result) if isinstance(result, str) else result
+                processed.append({'query': queries[i], 'results': data})
+        
+        return processed""",
+        "Configuration": "Use asyncio.gather for concurrent processing",
+        "Notes": "Efficient for processing multiple requests simultaneously",
+        "Priority": "Medium"
+    }
+]
+
+# 4. Integration Patterns
+integration_patterns = [
+    {
+        "Category": "Integration Patterns",
+        "Component": "Extension Architecture",
+        "Description": "Structure for Cursor IDE extension with GenSpark integration",
+        "Code_Example": """// package.json for Cursor extension
+{
+  "name": "genspark-integration",
+  "displayName": "GenSpark Integration",
+  "description": "Integrate GenSpark search and crawling capabilities",
+  "version": "1.0.0",
+  "engines": { "vscode": "^1.60.0" },
+  "categories": ["Other"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "genspark.search",
+        "title": "GenSpark: Search Web"
+      },
+      {
+        "command": "genspark.crawl", 
+        "title": "GenSpark: Extract Content"
+      }
+    ]
+  }
+}""",
+        "Configuration": "Standard VS Code extension manifest format",
+        "Notes": "Base structure for Cursor IDE extension development",
+        "Priority": "High"
+    },
+    {
+        "Category": "Integration Patterns",
+        "Component": "Command Registration",
+        "Description": "Register GenSpark commands in Cursor IDE",
+        "Code_Example": """// extension.ts
+import * as vscode from 'vscode';
+import { GenSparkService } from './genspark-service';
+
+export function activate(context: vscode.ExtensionContext) {
+    const gensparkService = new GenSparkService();
+    
+    const searchCommand = vscode.commands.registerCommand('genspark.search', async () => {
+        const query = await vscode.window.showInputBox({
+            prompt: 'Enter search query'
+        });
+        
+        if (query) {
+            const results = await gensparkService.search(query);
+            // Display results in output panel
+        }
+    });
+    
+    context.subscriptions.push(searchCommand);
+}""",
+        "Configuration": "TypeScript extension with vscode module",
+        "Notes": "Provides user interface for GenSpark operations",
+        "Priority": "High"
+    },
+    {
+        "Category": "Integration Patterns",
+        "Component": "Python Bridge",
+        "Description": "Bridge between TypeScript extension and Python GenSpark SDK",
+        "Code_Example": """// Python script execution from TypeScript
+import { spawn } from 'child_process';
+
+class GenSparkBridge {
+    async executeSearch(query: string): Promise<any> {
+        return new Promise((resolve, reject) => {
+            const python = spawn('python', ['-c', `
+import asyncio
+import json
+from genspark_sdk import GenSparkSDK
+
+async def search():
+    async with GenSparkSDK() as sdk:
+        result = await sdk.web_search(q="${query}")
+        print(json.dumps(result))
+
+asyncio.run(search())
+            `]);
+            
+            let output = '';
+            python.stdout.on('data', (data) => output += data);
+            python.on('close', (code) => {
+                if (code === 0) resolve(JSON.parse(output));
+                else reject(new Error('Python execution failed'));
+            });
+        });
+    }
+}""",
+        "Configuration": "Requires Python environment with genspark_sdk installed",
+        "Notes": "Enables TypeScript extensions to use Python SDK functionality",
+        "Priority": "Medium"
+    }
+]
+
+integration_data.extend(code_examples)
+integration_data.extend(integration_patterns)
+
+print(f"Added {len(code_examples)} code examples and {len(integration_patterns)} integration patterns")
+print("Current total entries:", len(integration_data))
+Added 3 code examples and 3 integration patterns
+Current total entries: 12
+[8]
+# 5. Command Mappings
+command_mappings = [
+    {
+        "Category": "Command Mappings",
+        "Component": "Search Commands",
+        "Description": "Keyboard shortcuts and command palette entries for search operations",
+        "Code_Example": """// keybindings.json
+[
+  {
+    "key": "ctrl+shift+g s",
+    "command": "genspark.search",
+    "when": "editorTextFocus"
+  },
+  {
+    "key": "ctrl+shift+g c", 
+    "command": "genspark.crawl",
+    "when": "editorTextFocus"
+  },
+  {
+    "key": "ctrl+shift+g q",
+    "command": "genspark.quickSearch",
+    "when": "editorHasSelection"
+  }
+]""",
+        "Configuration": "Add to Cursor IDE keybindings.json",
+        "Notes": "Provides quick access to GenSpark functionality",
+        "Priority": "Medium"
+    },
+    {
+        "Category": "Command Mappings",
+        "Component": "Context Menu Integration",
+        "Description": "Right-click context menu options for GenSpark operations",
+        "Code_Example": """// package.json menus section
+"menus": {
+  "editor/context": [
+    {
+      "when": "editorHasSelection",
+      "command": "genspark.searchSelected",
+      "group": "genspark@1"
+    },
+    {
+      "when": "resourceExtname == .md",
+      "command": "genspark.extractLinks", 
+      "group": "genspark@2"
+    }
+  ],
+  "explorer/context": [
+    {
+      "when": "resourceExtname == .py",
+      "command": "genspark.analyzeCode",
+      "group": "genspark@1"
+    }
+  ]
+}""",
+        "Configuration": "Extension package.json menu contributions",
+        "Notes": "Context-sensitive GenSpark operations based on file type and selection",
+        "Priority": "Medium"
+    }
+]
+
+# 6. Environment Variables
+env_variables = [
+    {
+        "Category": "Environment Variables",
+        "Component": "API Configuration",
+        "Description": "Essential environment variables for GenSpark SDK",
+        "Code_Example": """# .env file
+GENSPARK_API_KEY=your_api_key_here
+GENSPARK_BASE_URL=https://api.genspark.ai
+GENSPARK_TIMEOUT=30
+GENSPARK_RETRY_ATTEMPTS=3
+GENSPARK_DEBUG=false""",
+        "Configuration": "Create .env in project root or set as system environment variables",
+        "Notes": "API key is required; other variables are optional with sensible defaults",
+        "Priority": "High"
+    },
+    {
+        "Category": "Environment Variables",
+        "Component": "Development Settings", 
+        "Description": "Development and debugging environment configuration",
+        "Code_Example": """# Development .env
+GENSPARK_API_KEY=dev_api_key
+GENSPARK_DEBUG=true
+GENSPARK_VERBOSE=true
+GENSPARK_LOG_LEVEL=debug
+CURSOR_PYTHON_PATH=/usr/bin/python3
+CURSOR_WORKSPACE_ROOT=/path/to/workspace""",
+        "Configuration": "Use separate .env files for development vs production",
+        "Notes": "Enable verbose logging and debugging for development",
+        "Priority": "Medium"
+    },
+    {
+        "Category": "Environment Variables",
+        "Component": "Security Configuration",
+        "Description": "Security-related environment variable handling",
+        "Code_Example": """# Secure API key handling
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Validate required environment variables
+def validate_env():
+    required_vars = ['GENSPARK_API_KEY']
+    missing = [var for var in required_vars if not os.getenv(var)]
+    
+    if missing:
+        raise EnvironmentError(f"Missing required environment variables: {missing}")
+    
+    # Mask API key in logs
+    api_key = os.getenv('GENSPARK_API_KEY')
+    masked_key = f"{api_key[:8]}...{api_key[-4:]}" if api_key else "None"
+    print(f"Using API key: {masked_key}")""",
+        "Configuration": "Install python-dotenv package for .env file support",
+        "Notes": "Always validate and mask sensitive environment variables",
+        "Priority": "High"
+    }
+]
+
+integration_data.extend(command_mappings)
+integration_data.extend(env_variables)
+
+print(f"Added {len(command_mappings)} command mappings and {len(env_variables)} environment variables")
+print("Current total entries:", len(integration_data))
+Added 2 command mappings and 3 environment variables
+Current total entries: 17
