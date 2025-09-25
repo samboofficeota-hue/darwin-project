@@ -3,9 +3,6 @@ const nextConfig = {
   experimental: {
     appDir: true,
   },
-  env: {
-    GENSPARK_API_KEY: process.env.GENSPARK_API_KEY,
-  },
   // 大きなファイルのアップロード対応
   api: {
     bodyParser: {

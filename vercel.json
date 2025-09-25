@@ -1,17 +1,12 @@
 {
   "version": 2,
-  "builds": [
-    {
-      "src": "package.json",
-      "use": "@vercel/next"
-    }
-  ],
+  "framework": "nextjs",
+  "buildCommand": "npm run build",
+  "outputDirectory": ".next",
+  "installCommand": "npm install",
   "functions": {
     "pages/api/**/*.js": {
       "maxDuration": 60
     }
-  },
-  "env": {
-    "GENSPARK_API_KEY": "@genspark-api-key"
   }
 }
