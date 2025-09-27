@@ -116,7 +116,7 @@ export default function UploadPage() {
           {result && (
             <div className="bg-green-50 border border-green-200 rounded-md p-6">
               <h3 className="text-lg font-semibold text-green-800 mb-4">
-                ✅ 文字起こし開始
+                ✅ 講義録作成開始
               </h3>
               
               <div className="space-y-2 text-sm">
@@ -125,12 +125,18 @@ export default function UploadPage() {
                 <p><strong>推定処理時間:</strong> {result.estimatedDuration}分</p>
               </div>
 
-              <div className="mt-4">
+              <div className="mt-6 space-x-4">
                 <a
                   href="/vimeo-transcribe"
-                  className="text-blue-600 hover:text-blue-800 font-semibold"
+                  className="inline-block bg-blue-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
                 >
-                  詳細な進捗を確認する →
+                  📊 進捗を確認する
+                </a>
+                <a
+                  href={`/lecture-record/${result.jobId}`}
+                  className="inline-block bg-green-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-green-700 transition-colors"
+                >
+                  📄 講義録を表示
                 </a>
               </div>
             </div>

@@ -20,7 +20,7 @@ export default function Home() {
           <div className="grid md:grid-cols-3 gap-8 mt-16">
             <div className="bg-white rounded-lg shadow-lg p-6">
               <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-                📚 RAGシステム
+                📚 講義録データベース
               </h2>
               <p className="text-gray-600">
                 講演録、文献、論文をデータベースで管理し、高度な検索・分析機能を提供
@@ -29,19 +29,19 @@ export default function Home() {
             
             <div className="bg-white rounded-lg shadow-lg p-6">
               <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-                🎤 音声文字起こし
+                🎬 Vimeo動画文字起こし
               </h2>
               <p className="text-gray-600">
-                2時間の講演音声を4段階でテキスト化し、原文に近い状態で完全記録
+                Vimeoの動画URLを貼り付けるだけで、長時間の講演を自動で文字起こし
               </p>
             </div>
             
             <div className="bg-white rounded-lg shadow-lg p-6">
               <h2 className="text-2xl font-semibold text-gray-800 mb-4">
-                ✍️ コンテンツ生成
+                📄 HTML講義録生成
               </h2>
               <p className="text-gray-600">
-                RAGの情報を基に、講義録や政策提言書を自動生成
+                文字起こし結果を美しいHTML形式で講義録として出力・保存
               </p>
             </div>
           </div>
@@ -72,32 +72,44 @@ export default function Home() {
             </div>
           </div>
 
-                 {/* アクションボタン */}
+                 {/* メインアクション */}
                  <div className="mt-16 text-center">
-                   <div className="space-x-4">
+                   <div className="bg-white rounded-lg shadow-lg p-8 max-w-2xl mx-auto">
+                     <h2 className="text-2xl font-semibold text-gray-800 mb-6">
+                       講義録を作成する
+                     </h2>
+                     <p className="text-gray-600 mb-6">
+                       Vimeoの動画URLを貼り付けて、美しいHTML講義録を自動生成
+                     </p>
                      <a
                        href="/upload"
-                       className="inline-block bg-blue-600 text-white py-3 px-8 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                       className="inline-block bg-blue-600 text-white py-4 px-12 rounded-lg font-semibold text-lg hover:bg-blue-700 transition-colors shadow-lg"
                      >
-                       🎬 Vimeo動画を文字起こし
+                       🎬 講義録を作成開始
                      </a>
+                   </div>
+                 </div>
+
+                 {/* サブアクション */}
+                 <div className="mt-8 text-center">
+                   <div className="space-x-4">
                      <a
                        href="/vimeo-transcribe"
-                       className="inline-block bg-green-600 text-white py-3 px-8 rounded-lg font-semibold hover:bg-green-700 transition-colors"
+                       className="inline-block bg-green-600 text-white py-2 px-6 rounded-lg font-semibold hover:bg-green-700 transition-colors"
                      >
-                       📊 文字起こし進捗確認
+                       📊 進捗確認
                      </a>
                      <a
                        href="/test-vimeo"
-                       className="inline-block bg-yellow-600 text-white py-3 px-8 rounded-lg font-semibold hover:bg-yellow-700 transition-colors"
+                       className="inline-block bg-yellow-600 text-white py-2 px-6 rounded-lg font-semibold hover:bg-yellow-700 transition-colors"
                      >
-                       🧪 API接続テスト
+                       🧪 接続テスト
                      </a>
                      <a
                        href="/search"
-                       className="inline-block bg-purple-600 text-white py-3 px-8 rounded-lg font-semibold hover:bg-purple-700 transition-colors"
+                       className="inline-block bg-purple-600 text-white py-2 px-6 rounded-lg font-semibold hover:bg-purple-700 transition-colors"
                      >
-                       文献を検索
+                       文献検索
                      </a>
                    </div>
                  </div>
