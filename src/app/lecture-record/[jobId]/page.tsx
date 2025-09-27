@@ -21,7 +21,7 @@ interface LectureRecord {
 
 export default function LectureRecordPage() {
   const params = useParams();
-  const jobId = params.jobId as string;
+  const jobId = params?.jobId as string;
   const [record, setRecord] = useState<LectureRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
