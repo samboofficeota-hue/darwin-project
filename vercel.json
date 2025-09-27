@@ -7,7 +7,7 @@
   "functions": {
     "pages/api/**/*.js": {
       "maxDuration": 300,
-      "memory": 3008
+      "memory": 1024
     }
   },
   "env": {
