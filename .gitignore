@@ -88,3 +88,4 @@ api_keys.json
 generated/
 output/
 .vercel
+.env*.local
