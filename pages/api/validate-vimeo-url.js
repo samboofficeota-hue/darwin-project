@@ -51,6 +51,7 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('Vimeo URL validation error:', error);
+    console.error('Error stack:', error.stack);
     
     // エラーの種類に応じて適切なステータスコードを返す
     const isClientError = error.message.includes('無効なVimeo URL') || 
@@ -60,6 +61,8 @@ export default async function handler(req, res) {
                          error.message.includes('音声が含まれていない');
     
     const statusCode = isClientError ? 400 : 500;
+    
+    console.log('Returning error response:', { statusCode, error: error.message });
     
     res.status(statusCode).json({
       error: 'URL検証中にエラーが発生しました',
