@@ -23,13 +23,19 @@ export default function UploadPage() {
     setResult(null);
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒タイムアウト
+      
       const response = await fetch('/api/vimeo-transcribe', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ vimeo_url: vimeoUrl }),
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
 
       const data = await response.json();
 
@@ -39,7 +45,11 @@ export default function UploadPage() {
         setError(data.error || '文字起こし開始に失敗しました');
       }
     } catch (err) {
-      setError('通信エラーが発生しました');
+      if (err.name === 'AbortError') {
+        setError('タイムアウトが発生しました。ネットワーク接続を確認してください。');
+      } else {
+        setError('通信エラーが発生しました');
+      }
     } finally {
       setProcessing(false);
     }

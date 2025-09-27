@@ -21,7 +21,14 @@ export default function VimeoTranscribePage() {
 
     const interval = setInterval(async () => {
       try {
-        const response = await fetch(`/api/transcription-status?job_id=${jobId}`);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒タイムアウト
+        
+        const response = await fetch(`/api/transcription-status?job_id=${jobId}`, {
+          signal: controller.signal
+        });
+        
+        clearTimeout(timeoutId);
         const data = await response.json();
 
         if (response.ok) {
@@ -46,7 +53,11 @@ export default function VimeoTranscribePage() {
         }
       } catch (err) {
         console.error('Status check error:', err);
-        setError('ステータス確認エラーが発生しました');
+        if (err.name === 'AbortError') {
+          setError('タイムアウトが発生しました。ネットワーク接続を確認してください。');
+        } else {
+          setError('ステータス確認エラーが発生しました');
+        }
         setProcessing(false);
         clearInterval(interval);
       }
@@ -69,13 +80,19 @@ export default function VimeoTranscribePage() {
     setProgress(0);
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒タイムアウト
+      
       const response = await fetch('/api/vimeo-transcribe', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ vimeo_url: vimeoUrl }),
+        signal: controller.signal
       });
+      
+      clearTimeout(timeoutId);
 
       const data = await response.json();
 
@@ -88,7 +105,11 @@ export default function VimeoTranscribePage() {
         setProcessing(false);
       }
     } catch (err) {
-      setError('通信エラーが発生しました');
+      if (err.name === 'AbortError') {
+        setError('タイムアウトが発生しました。ネットワーク接続を確認してください。');
+      } else {
+        setError('通信エラーが発生しました');
+      }
       setProcessing(false);
     }
   };
