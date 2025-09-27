@@ -3,6 +3,13 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 
+// TypeScript用のwindow拡張
+declare global {
+  interface Window {
+    urlValidationTimeout?: NodeJS.Timeout;
+  }
+}
+
 interface LectureInfo {
   theme: string;
   speaker: {
@@ -113,11 +120,17 @@ export default function LectureTranscribePage() {
     setVideoPreview(null);
 
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒タイムアウト
+
       const response = await fetch('/api/validate-vimeo-url', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url })
+        body: JSON.stringify({ url }),
+        signal: controller.signal
       });
+
+      clearTimeout(timeoutId);
 
       const data = await response.json();
 
@@ -132,7 +145,11 @@ export default function LectureTranscribePage() {
         setUrlError(data.error || 'URL検証に失敗しました');
       }
     } catch (err) {
-      setUrlError('URL検証中にエラーが発生しました');
+      if (err instanceof Error && err.name === 'AbortError') {
+        setUrlError('URL検証がタイムアウトしました。ネットワーク接続を確認してください。');
+      } else {
+        setUrlError('URL検証中にエラーが発生しました');
+      }
     } finally {
       setValidatingUrl(false);
     }
@@ -141,11 +158,16 @@ export default function LectureTranscribePage() {
   const handleUrlChange = (url: string) => {
     setVimeoUrl(url);
     if (url.trim()) {
-      // デバウンス処理
-      const timeoutId = setTimeout(() => {
+      // デバウンス処理（前のタイムアウトをクリア）
+      if (window.urlValidationTimeout) {
+        clearTimeout(window.urlValidationTimeout);
+      }
+      window.urlValidationTimeout = setTimeout(() => {
         validateVimeoUrl(url);
       }, 1000);
-      return () => clearTimeout(timeoutId);
+    } else {
+      setVideoPreview(null);
+      setUrlError(null);
     }
   };
 

@@ -60,10 +60,29 @@ async function validateAndGetVideoInfo(url) {
     const match = url.match(vimeoPattern);
     
     if (!match) {
-      return null;
+      throw new Error('無効なVimeo URLです。正しい形式のURLを入力してください。');
     }
 
     const videoId = match[1];
+    
+    // Vimeo APIトークンの確認
+    if (!process.env.VIMEO_ACCESS_TOKEN) {
+      console.warn('VIMEO_ACCESS_TOKEN is not set, using mock data');
+      // モックデータを返す（開発環境用）
+      return {
+        videoId,
+        title: `Vimeo動画 ${videoId}`,
+        duration: 1800, // 30分
+        description: 'Vimeo APIトークンが設定されていないため、モックデータを表示しています。',
+        thumbnail: null,
+        embed: null,
+        privacy: 'public',
+        size: 0,
+        createdTime: new Date().toISOString(),
+        modifiedTime: new Date().toISOString(),
+        valid: true
+      };
+    }
     
     // Vimeo APIを使用して動画情報を取得
     const response = await fetch(`https://api.vimeo.com/videos/${videoId}`, {
@@ -110,7 +129,8 @@ async function validateAndGetVideoInfo(url) {
       privacy: videoData.privacy?.view,
       size: videoData.size || 0,
       createdTime: videoData.created_time,
-      modifiedTime: videoData.modified_time
+      modifiedTime: videoData.modified_time,
+      valid: true
     };
 
   } catch (error) {
