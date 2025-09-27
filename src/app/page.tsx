@@ -72,29 +72,29 @@ export default function Home() {
             </div>
           </div>
 
-          {/* アクションボタン */}
-          <div className="mt-16 text-center">
-            <div className="space-x-4">
-              <a
-                href="/transcribe"
-                className="inline-block bg-blue-600 text-white py-3 px-8 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
-              >
-                🎤 講演動画を文字起こし
-              </a>
-              <a
-                href="/upload"
-                className="inline-block bg-green-600 text-white py-3 px-8 rounded-lg font-semibold hover:bg-green-700 transition-colors"
-              >
-                音声ファイルをアップロード
-              </a>
-              <a
-                href="/search"
-                className="inline-block bg-purple-600 text-white py-3 px-8 rounded-lg font-semibold hover:bg-purple-700 transition-colors"
-              >
-                文献を検索
-              </a>
-            </div>
-          </div>
+                 {/* アクションボタン */}
+                 <div className="mt-16 text-center">
+                   <div className="space-x-4">
+                     <a
+                       href="/vimeo-transcribe"
+                       className="inline-block bg-blue-600 text-white py-3 px-8 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+                     >
+                       🎬 Vimeo動画を文字起こし
+                     </a>
+                     <a
+                       href="/transcribe"
+                       className="inline-block bg-green-600 text-white py-3 px-8 rounded-lg font-semibold hover:bg-green-700 transition-colors"
+                     >
+                       🎤 音声ファイルを文字起こし
+                     </a>
+                     <a
+                       href="/search"
+                       className="inline-block bg-purple-600 text-white py-3 px-8 rounded-lg font-semibold hover:bg-purple-700 transition-colors"
+                     >
+                       文献を検索
+                     </a>
+                   </div>
+                 </div>
         </div>
       </div>
     </main>
