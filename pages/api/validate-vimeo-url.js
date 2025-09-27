@@ -55,10 +55,12 @@ export default async function handler(req, res) {
     
     // エラーの種類に応じて適切なステータスコードを返す
     const isClientError = error.message.includes('無効なVimeo URL') || 
-                         error.message.includes('動画が見つかりません') ||
-                         error.message.includes('アクセスが制限されています') ||
+                         error.message.includes('指定された動画が見つかりません') ||
+                         error.message.includes('動画へのアクセスが制限されています') ||
                          error.message.includes('動画が長すぎます') ||
-                         error.message.includes('音声が含まれていない');
+                         error.message.includes('音声が含まれていない') ||
+                         error.message.includes('Vimeo APIのレート制限に達しました') ||
+                         error.message.includes('Vimeo APIトークンが無効です');
     
     const statusCode = isClientError ? 400 : 500;
     
