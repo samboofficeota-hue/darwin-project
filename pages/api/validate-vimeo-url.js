@@ -30,7 +30,12 @@ export default async function handler(req, res) {
     }
 
     // デバッグログ
-    console.log('Vimeo URL validation request:', { url, hasToken: !!process.env.VIMEO_ACCESS_TOKEN });
+    console.log('Vimeo URL validation request:', { 
+      url, 
+      hasToken: !!process.env.VIMEO_ACCESS_TOKEN,
+      tokenLength: process.env.VIMEO_ACCESS_TOKEN?.length || 0,
+      tokenPrefix: process.env.VIMEO_ACCESS_TOKEN?.substring(0, 10) || 'none'
+    });
 
     // Vimeo URLの検証と動画情報取得
     console.log('Calling validateAndGetVideoInfo...');
