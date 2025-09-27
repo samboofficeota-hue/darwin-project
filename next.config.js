@@ -1,14 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
-  experimental: {
-    appDir: true,
-  },
   // 大きなファイルのアップロード対応
-  api: {
-    bodyParser: {
-      sizeLimit: '2gb',
-    },
+  experimental: {
+    serverComponentsExternalPackages: ['@google-cloud/speech'],
   },
   // 静的ファイルの配信設定
   async headers() {

@@ -21,9 +21,7 @@
     "tailwindcss": "3.3.6",
     "autoprefixer": "10.4.16",
     "postcss": "8.4.32",
-    "@google-cloud/speech": "^6.0.0",
-    "multer": "^1.4.5-lts.1",
-    "@types/multer": "^1.4.11"
+    "@google-cloud/speech": "^6.0.0"
   },
   "devDependencies": {
     "eslint": "^8.0.0",

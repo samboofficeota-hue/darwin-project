@@ -4,7 +4,6 @@
  */
 
 import { SpeechClient } from '@google-cloud/speech';
-import formidable from 'formidable';
 import fs from 'fs';
 import path from 'path';
 
@@ -16,7 +15,7 @@ const speechClient = new SpeechClient({
 
 export const config = {
   api: {
-    bodyParser: false, // formidableを使用するため無効化
+    bodyParser: false, // ファイルアップロードのため無効化
     sizeLimit: '2gb', // 2時間の動画ファイル対応
   },
 };
@@ -37,39 +36,49 @@ export default async function handler(req, res) {
   }
 
   try {
-    // ファイルアップロードの処理
-    const form = formidable({
-      maxFileSize: 2 * 1024 * 1024 * 1024, // 2GB
-      uploadDir: process.env.UPLOAD_DIR || '/tmp/uploads',
-      keepExtensions: true,
-    });
+    // ファイルアップロードの処理（Next.js 14対応）
+    const formData = await req.formData();
+    const audioFile = formData.get('audio');
 
-    const [fields, files] = await form.parse(req);
-    const audioFile = files.audio?.[0];
-
-    if (!audioFile) {
+    if (!audioFile || typeof audioFile === 'string') {
       return res.status(400).json({ error: '音声ファイルが指定されていません' });
     }
 
     // ファイル形式の検証
     const allowedTypes = ['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/m4a', 'video/mp4'];
-    if (!allowedTypes.includes(audioFile.mimetype)) {
+    if (!allowedTypes.includes(audioFile.type)) {
       return res.status(400).json({ 
         error: 'サポートされていないファイル形式です',
         supportedTypes: allowedTypes
       });
     }
 
+    // ファイルサイズの検証
+    const maxSize = 2 * 1024 * 1024 * 1024; // 2GB
+    if (audioFile.size > maxSize) {
+      return res.status(400).json({ error: 'ファイルサイズが大きすぎます（最大2GB）' });
+    }
+
+    // 一時ファイルとして保存
+    const uploadDir = process.env.UPLOAD_DIR || '/tmp/uploads';
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+    
+    const tempFilePath = path.join(uploadDir, `temp-${Date.now()}-${audioFile.name}`);
+    const arrayBuffer = await audioFile.arrayBuffer();
+    fs.writeFileSync(tempFilePath, Buffer.from(arrayBuffer));
+
     // 文字起こしの実行
-    const transcriptionResult = await transcribeAudio(audioFile.filepath, audioFile.mimetype);
+    const transcriptionResult = await transcribeAudio(tempFilePath, audioFile.type);
 
     // 一時ファイルの削除
-    fs.unlinkSync(audioFile.filepath);
+    fs.unlinkSync(tempFilePath);
 
     res.status(200).json({
       status: 'success',
       transcription: transcriptionResult,
-      filename: audioFile.originalFilename,
+      filename: audioFile.name,
       fileSize: audioFile.size,
       duration: transcriptionResult.duration || 'unknown'
     });
