@@ -76,16 +76,22 @@ export default function Home() {
                  <div className="mt-16 text-center">
                    <div className="space-x-4">
                      <a
-                       href="/vimeo-transcribe"
+                       href="/upload"
                        className="inline-block bg-blue-600 text-white py-3 px-8 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
                      >
                        🎬 Vimeo動画を文字起こし
                      </a>
                      <a
-                       href="/transcribe"
+                       href="/vimeo-transcribe"
                        className="inline-block bg-green-600 text-white py-3 px-8 rounded-lg font-semibold hover:bg-green-700 transition-colors"
                      >
-                       🎤 音声ファイルを文字起こし
+                       📊 文字起こし進捗確認
+                     </a>
+                     <a
+                       href="/test-vimeo"
+                       className="inline-block bg-yellow-600 text-white py-3 px-8 rounded-lg font-semibold hover:bg-yellow-700 transition-colors"
+                     >
+                       🧪 API接続テスト
                      </a>
                      <a
                        href="/search"

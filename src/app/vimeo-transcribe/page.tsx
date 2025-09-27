@@ -151,6 +151,24 @@ export default function VimeoTranscribePage() {
             中断・再開機能により、安定した処理が可能です。
           </p>
 
+          {/* Vimeoライブラリへのリンク */}
+          <div className="mb-8 p-4 bg-blue-50 border border-blue-200 rounded-md">
+            <h3 className="text-lg font-semibold text-blue-800 mb-2">
+              📚 Vimeoライブラリ
+            </h3>
+            <p className="text-blue-700 mb-3">
+              講義動画をVimeoにアップロードして、URLを取得してください。
+            </p>
+            <a
+              href="https://vimeo.com/library"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-block bg-blue-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-blue-700 transition-colors"
+            >
+              Vimeoライブラリを開く →
+            </a>
+          </div>
+
           {/* URL入力フォーム */}
           <form onSubmit={handleSubmit} className="mb-8">
             <div className="mb-6">
