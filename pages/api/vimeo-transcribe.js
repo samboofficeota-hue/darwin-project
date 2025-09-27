@@ -41,7 +41,7 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { vimeo_url, resume_job_id } = req.body;
+    const { vimeo_url, resume_job_id, lecture_info } = req.body;
 
     if (!vimeo_url && !resume_job_id) {
       return res.status(400).json({ error: 'Vimeo URLまたは再開ジョブIDが必要です' });
@@ -53,7 +53,7 @@ export default async function handler(req, res) {
     }
 
     // 新しいジョブを開始
-    return await startNewTranscriptionJob(vimeo_url, res);
+    return await startNewTranscriptionJob(vimeo_url, lecture_info, res);
 
   } catch (error) {
     console.error('Vimeo transcription error:', error);
@@ -67,10 +67,14 @@ export default async function handler(req, res) {
 /**
  * 新しい文字起こしジョブを開始
  */
-async function startNewTranscriptionJob(vimeoUrl, res) {
+async function startNewTranscriptionJob(vimeoUrl, lectureInfo, res) {
   try {
     // ジョブIDを生成
     const jobId = generateJobId();
+    
+    // 講義情報から動的Phrase Hintsを生成
+    const { generateDynamicPhraseHints } = require('../../lib/dynamic-phrase-hints');
+    const phraseHints = lectureInfo ? generateDynamicPhraseHints(lectureInfo) : [];
     
     // Vimeo URLの検証
     const videoInfo = await validateVimeoUrl(vimeoUrl);
@@ -344,8 +348,15 @@ async function processChunksInParallel(chunks, jobId) {
  */
 async function processAudioChunk(chunk, vimeoUrl) {
   try {
-    // 実際の実装では、チャンクの音声データを取得してSpeech-to-Text APIに送信
-    // ここではプレースホルダーとして実装
+    // 適応的辞書システムを統合
+    const { generatePhraseHints, detectLectureDomain } = require('../../lib/adaptive-dictionary');
+    
+    // 講義の分野を検出（サンプルテキストから）
+    const sampleText = chunk.text || '';
+    const domains = detectLectureDomain(sampleText);
+    
+    // 分野に応じたPhrase Hintsを生成
+    const phraseHints = generatePhraseHints(domains);
     
     const config = {
       encoding: 'MP4',
@@ -354,7 +365,10 @@ async function processAudioChunk(chunk, vimeoUrl) {
       enableWordTimeOffsets: true,
       enableAutomaticPunctuation: true,
       model: 'latest_long',
-      useEnhanced: true
+      useEnhanced: true,
+      // 専門用語を事前に指定
+      phraseHints: phraseHints.slice(0, 100), // 100語に制限
+      boost: 20.0 // 重要度を20倍にブースト
     };
 
     // チャンクの音声データを取得（実際の実装では適切な方法で取得）

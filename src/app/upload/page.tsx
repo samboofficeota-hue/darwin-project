@@ -1,20 +1,48 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+
+interface LectureInfo {
+  theme: string;
+  speaker: {
+    name: string;
+    title: string;
+    bio: string;
+  };
+  description: string;
+}
 
 export default function UploadPage() {
   const [vimeoUrl, setVimeoUrl] = useState('');
   const [processing, setProcessing] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [lectureInfo, setLectureInfo] = useState<LectureInfo | null>(null);
   const router = useRouter();
+
+  // 講義情報をセッションストレージから読み込み
+  useEffect(() => {
+    const savedLectureInfo = sessionStorage.getItem('lectureInfo');
+    if (savedLectureInfo) {
+      try {
+        setLectureInfo(JSON.parse(savedLectureInfo));
+      } catch (error) {
+        console.error('Error parsing lecture info:', error);
+      }
+    }
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!vimeoUrl.trim()) {
       setError('Vimeo URLを入力してください');
+      return;
+    }
+
+    if (!lectureInfo) {
+      setError('講義情報が設定されていません。先に講義情報を入力してください。');
       return;
     }
 
@@ -31,7 +59,10 @@ export default function UploadPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ vimeo_url: vimeoUrl }),
+        body: JSON.stringify({ 
+          vimeo_url: vimeoUrl,
+          lecture_info: lectureInfo
+        }),
         signal: controller.signal
       });
       
@@ -66,6 +97,53 @@ export default function UploadPage() {
             Vimeoの動画URLを入力して、長時間の講義動画を文字起こしします。<br />
             中断・再開機能により、安定した処理が可能です。
           </p>
+
+          {/* 講義情報表示 */}
+          {lectureInfo && (
+            <div className="mb-8 p-6 bg-green-50 border border-green-200 rounded-lg">
+              <h3 className="text-lg font-semibold text-green-800 mb-4">
+                📚 講義情報（認識精度向上に使用）
+              </h3>
+              <div className="grid md:grid-cols-2 gap-4 text-sm">
+                <div>
+                  <p><strong>テーマ:</strong> {lectureInfo.theme}</p>
+                  <p><strong>講演者:</strong> {lectureInfo.speaker.name}</p>
+                  <p><strong>肩書き:</strong> {lectureInfo.speaker.title}</p>
+                </div>
+                <div>
+                  <p><strong>紹介文:</strong> {lectureInfo.description.substring(0, 100)}...</p>
+                </div>
+              </div>
+              <div className="mt-4 text-center">
+                <button
+                  onClick={() => router.push('/lecture-info')}
+                  className="text-green-600 hover:text-green-800 font-semibold text-sm"
+                >
+                  講義情報を編集 →
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* 講義情報未設定の場合 */}
+          {!lectureInfo && (
+            <div className="mb-8 p-6 bg-yellow-50 border border-yellow-200 rounded-lg">
+              <h3 className="text-lg font-semibold text-yellow-800 mb-2">
+                ⚠️ 講義情報が未設定です
+              </h3>
+              <p className="text-yellow-700 mb-4">
+                より正確な文字起こしのために、講義の詳細情報を入力することをお勧めします。
+              </p>
+              <div className="text-center">
+                <button
+                  onClick={() => router.push('/lecture-info')}
+                  className="bg-yellow-600 text-white py-2 px-6 rounded-lg font-semibold hover:bg-yellow-700 transition-colors"
+                >
+                  講義情報を入力する
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Vimeoライブラリへのリンク */}
           <div className="mb-8 p-4 bg-blue-50 border border-blue-200 rounded-md">

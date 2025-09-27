@@ -79,14 +79,19 @@ export default function Home() {
                        講義録を作成する
                      </h2>
                      <p className="text-gray-600 mb-6">
-                       Vimeoの動画URLを貼り付けて、美しいHTML講義録を自動生成
+                       講義情報を入力してからVimeo動画を文字起こし、美しいHTML講義録を自動生成
                      </p>
-                     <a
-                       href="/upload"
-                       className="inline-block bg-blue-600 text-white py-4 px-12 rounded-lg font-semibold text-lg hover:bg-blue-700 transition-colors shadow-lg"
-                     >
-                       🎬 講義録を作成開始
-                     </a>
+                     <div className="space-y-4">
+                       <a
+                         href="/lecture-info"
+                         className="inline-block bg-blue-600 text-white py-4 px-12 rounded-lg font-semibold text-lg hover:bg-blue-700 transition-colors shadow-lg"
+                       >
+                         📝 講義情報を入力して開始
+                       </a>
+                       <div className="text-sm text-gray-500">
+                         または <a href="/upload" className="text-blue-600 hover:text-blue-800 underline">直接Vimeo URLを入力</a>
+                       </div>
+                     </div>
                    </div>
                  </div>
 
