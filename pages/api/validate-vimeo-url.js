@@ -19,9 +19,13 @@ export default async function handler(req, res) {
   }
 
   try {
+    console.log('API handler called with method:', req.method);
+    console.log('Request body:', req.body);
+    
     const { url } = req.body;
 
     if (!url) {
+      console.log('No URL provided');
       return res.status(400).json({ error: 'URLが必要です' });
     }
 
@@ -29,7 +33,9 @@ export default async function handler(req, res) {
     console.log('Vimeo URL validation request:', { url, hasToken: !!process.env.VIMEO_ACCESS_TOKEN });
 
     // Vimeo URLの検証と動画情報取得
+    console.log('Calling validateAndGetVideoInfo...');
     const videoInfo = await validateAndGetVideoInfo(url);
+    console.log('validateAndGetVideoInfo result:', videoInfo);
 
     if (!videoInfo) {
       return res.status(400).json({ 
