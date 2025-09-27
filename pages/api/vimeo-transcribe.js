@@ -404,19 +404,25 @@ function mergeTranscriptionResults(results) {
     .map(result => result.value)
     .sort((a, b) => a.startTime - b.startTime);
 
-  const fullText = successfulResults
-    .map(result => result.text)
-    .join('\n');
-
-  const averageConfidence = successfulResults
-    .reduce((sum, result) => sum + result.confidence, 0) / successfulResults.length;
-
+  // テキスト処理システムを統合
+  const { processLectureRecord } = require('../../lib/text-processor');
+  
+  const rawData = {
+    chunks: successfulResults,
+    duration: successfulResults[successfulResults.length - 1]?.endTime || 0
+  };
+  
+  // 高度なテキスト処理を適用
+  const processedData = processLectureRecord(rawData);
+  
   return {
-    fullText,
-    averageConfidence,
-    totalChunks: successfulResults.length,
-    duration: successfulResults[successfulResults.length - 1]?.endTime || 0,
-    chunks: successfulResults
+    fullText: processedData.chunks.map(chunk => chunk.text).join('\n'),
+    averageConfidence: processedData.statistics.averageConfidence,
+    totalChunks: processedData.statistics.totalChunks,
+    duration: processedData.duration,
+    chunks: processedData.chunks,
+    statistics: processedData.statistics,
+    processed: true
   };
 }
 
