@@ -92,24 +92,11 @@ async function validateAndGetVideoInfo(url) {
     const videoId = match[1];
     console.log('Extracted video ID:', videoId);
     
-    // 一時的にすべてのVimeo URLに対してモックデータを返す（レート制限回避）
-    console.warn('Using mock data for Vimeo API (rate limit or token issue)');
-    // モックデータを返す（開発環境用）
-    const mockData = {
-      videoId,
-      title: `Vimeo動画 ${videoId}`,
-      duration: 1800, // 30分
-      description: 'Vimeo APIのレート制限により、モックデータを表示しています。実際の動画情報は文字起こし処理時に取得されます。',
-      thumbnail: null,
-      embed: null,
-      privacy: 'public',
-      size: 0,
-      createdTime: new Date().toISOString(),
-      modifiedTime: new Date().toISOString(),
-      valid: true
-    };
-    console.log('Returning mock data:', mockData);
-    return mockData;
+    // Vimeo APIトークンの確認
+    if (!process.env.VIMEO_ACCESS_TOKEN) {
+      console.warn('VIMEO_ACCESS_TOKEN is not set');
+      throw new Error('Vimeo APIトークンが設定されていません');
+    }
     
     // Vimeo APIを使用して動画情報を取得
     const response = await fetch(`https://api.vimeo.com/videos/${videoId}`, {
@@ -120,28 +107,19 @@ async function validateAndGetVideoInfo(url) {
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`Vimeo API error ${response.status}:`, errorText);
+      
       if (response.status === 404) {
-        throw new Error('動画が見つかりません');
+        throw new Error('指定された動画が見つかりません。URLを確認してください。');
       } else if (response.status === 403) {
-        throw new Error('動画へのアクセスが制限されています');
+        throw new Error('動画へのアクセスが制限されています。');
       } else if (response.status === 429) {
-        // レート制限の場合はモックデータを返す
-        console.warn('Vimeo API rate limit reached, using mock data');
-        return {
-          videoId,
-          title: `Vimeo動画 ${videoId}`,
-          duration: 1800, // 30分
-          description: 'Vimeo APIのレート制限により、モックデータを表示しています。実際の動画情報は文字起こし処理時に取得されます。',
-          thumbnail: null,
-          embed: null,
-          privacy: 'public',
-          size: 0,
-          createdTime: new Date().toISOString(),
-          modifiedTime: new Date().toISOString(),
-          valid: true
-        };
+        throw new Error('Vimeo APIのレート制限に達しました。しばらく待ってから再試行してください。');
+      } else if (response.status === 401) {
+        throw new Error('Vimeo APIトークンが無効です。');
       } else {
-        throw new Error(`Vimeo API error: ${response.status}`);
+        throw new Error(`Vimeo API error: ${response.status} - ${errorText}`);
       }
     }
 
