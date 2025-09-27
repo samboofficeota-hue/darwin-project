@@ -67,9 +67,8 @@ export default function LectureRecordPage() {
   const downloadHTML = () => {
     if (!record) return;
 
-    // テキスト処理システムを使用してHTMLを生成
-    const { convertToHTML } = require('../../../../lib/text-processor');
-    const htmlContent = convertToHTML(record);
+    // HTMLを生成
+    const htmlContent = generateHTML(record);
     
     const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);

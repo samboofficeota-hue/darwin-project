@@ -83,13 +83,13 @@ export default function Home() {
                      </p>
                      <div className="space-y-4">
                        <a
-                         href="/lecture-info"
+                         href="/lecture-transcribe"
                          className="inline-block bg-blue-600 text-white py-4 px-12 rounded-lg font-semibold text-lg hover:bg-blue-700 transition-colors shadow-lg"
                        >
-                         📝 講義情報を入力して開始
+                         🚀 統合インターフェースで開始
                        </a>
                        <div className="text-sm text-gray-500">
-                         または <a href="/upload" className="text-blue-600 hover:text-blue-800 underline">直接Vimeo URLを入力</a>
+                         または <a href="/lecture-info" className="text-blue-600 hover:text-blue-800 underline">従来の手順で進める</a>
                        </div>
                      </div>
                    </div>

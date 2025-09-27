@@ -76,7 +76,7 @@ export default function UploadPage() {
         setError(data.error || '文字起こし開始に失敗しました');
       }
     } catch (err) {
-      if (err.name === 'AbortError') {
+      if (err instanceof Error && err.name === 'AbortError') {
         setError('タイムアウトが発生しました。ネットワーク接続を確認してください。');
       } else {
         setError('通信エラーが発生しました');

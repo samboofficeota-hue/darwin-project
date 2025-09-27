@@ -73,7 +73,7 @@ async function startNewTranscriptionJob(vimeoUrl, lectureInfo, res) {
     const jobId = generateJobId();
     
     // 講義情報から動的Phrase Hintsを生成
-    const { generateDynamicPhraseHints } = require('../../lib/dynamic-phrase-hints');
+    const { generateDynamicPhraseHints } = require('../../lib/text-processor');
     const phraseHints = lectureInfo ? generateDynamicPhraseHints(lectureInfo) : [];
     
     // Vimeo URLの検証
@@ -156,40 +156,61 @@ async function resumeTranscriptionJob(jobId, res) {
 }
 
 /**
- * 非同期で文字起こし処理を実行
+ * 非同期で文字起こし処理を実行（エラー回復機能付き）
  */
 async function processTranscriptionAsync(jobId) {
   const processingState = processingStates.get(jobId);
+  const maxRetries = 3;
+  let retryCount = 0;
   
-  try {
-    processingState.status = 'processing';
-    processingState.lastUpdate = new Date().toISOString();
+  while (retryCount < maxRetries) {
+    try {
+      processingState.status = 'processing';
+      processingState.lastUpdate = new Date().toISOString();
+      processingState.retryCount = retryCount;
 
-    // 1. Vimeoから音声ストリームを取得
-    const audioStream = await getVimeoAudioStream(processingState.vimeoUrl);
-    
-    // 2. 音声をチャンクに分割
-    const chunks = await splitAudioIntoChunks(audioStream, processingState.videoInfo.duration);
-    processingState.chunks = chunks;
-    processingState.totalChunks = chunks.length;
+      // 1. Vimeoから音声ストリームを取得
+      const audioStream = await getVimeoAudioStreamWithRetry(processingState.vimeoUrl, retryCount);
+      
+      // 2. 音声をチャンクに分割
+      const chunks = await splitAudioIntoChunks(audioStream, processingState.videoInfo.duration);
+      processingState.chunks = chunks;
+      processingState.totalChunks = chunks.length;
 
-    // 3. 各チャンクを並列処理
-    const transcriptionResults = await processChunksInParallel(chunks, jobId);
-    
-    // 4. 結果を統合
-    const finalResult = mergeTranscriptionResults(transcriptionResults);
-    
-    // 5. 処理完了
-    processingState.status = 'completed';
-    processingState.progress = 100;
-    processingState.result = finalResult;
-    processingState.lastUpdate = new Date().toISOString();
+      // 3. 各チャンクを並列処理（エラー回復機能付き）
+      const transcriptionResults = await processChunksInParallelWithRetry(chunks, jobId, retryCount);
+      
+      // 4. 結果を統合
+      const finalResult = mergeTranscriptionResults(transcriptionResults);
+      
+      // 5. 処理完了
+      processingState.status = 'completed';
+      processingState.progress = 100;
+      processingState.result = finalResult;
+      processingState.lastUpdate = new Date().toISOString();
+      processingState.retryCount = 0; // 成功時はリトライカウントをリセット
+      break;
 
-  } catch (error) {
-    console.error(`Job ${jobId} processing error:`, error);
-    processingState.status = 'error';
-    processingState.error = error.message;
-    processingState.lastUpdate = new Date().toISOString();
+    } catch (error) {
+      retryCount++;
+      console.error(`Job ${jobId} processing error (attempt ${retryCount}):`, error);
+      
+      if (retryCount >= maxRetries) {
+        processingState.status = 'error';
+        processingState.error = `処理に失敗しました（${maxRetries}回の試行後）: ${error.message}`;
+        processingState.canResume = true; // 手動で再開可能
+        processingState.lastUpdate = new Date().toISOString();
+        break;
+      } else {
+        // リトライ前の待機時間（指数バックオフ）
+        const waitTime = Math.min(1000 * Math.pow(2, retryCount - 1), 30000);
+        processingState.status = 'paused';
+        processingState.error = `一時的なエラーが発生しました。${waitTime/1000}秒後に再試行します...`;
+        processingState.lastUpdate = new Date().toISOString();
+        
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+    }
   }
 }
 
@@ -238,6 +259,31 @@ async function validateVimeoUrl(vimeoUrl) {
 }
 
 /**
+ * Vimeoから音声ストリームを取得（リトライ機能付き）
+ */
+async function getVimeoAudioStreamWithRetry(vimeoUrl, retryCount = 0) {
+  const maxRetries = 3;
+  let lastError;
+  
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await getVimeoAudioStream(vimeoUrl);
+    } catch (error) {
+      lastError = error;
+      console.error(`Vimeo audio stream error (attempt ${attempt + 1}):`, error);
+      
+      if (attempt < maxRetries) {
+        // 指数バックオフで待機
+        const waitTime = Math.min(1000 * Math.pow(2, attempt), 10000);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+    }
+  }
+  
+  throw new Error(`音声ストリームの取得に失敗しました（${maxRetries + 1}回の試行後）: ${lastError.message}`);
+}
+
+/**
  * Vimeoから音声ストリームを取得
  */
 async function getVimeoAudioStream(vimeoUrl) {
@@ -254,6 +300,10 @@ async function getVimeoAudioStream(vimeoUrl) {
         'Accept': 'application/vnd.vimeo.*+json;version=3.4'
       }
     });
+
+    if (!response.ok) {
+      throw new Error(`Vimeo API error: ${response.status} ${response.statusText}`);
+    }
 
     const videoData = await response.json();
     
@@ -303,7 +353,68 @@ async function splitAudioIntoChunks(audioStream, duration) {
 }
 
 /**
- * チャンクを並列処理
+ * チャンクを並列処理（リトライ機能付き）
+ */
+async function processChunksInParallelWithRetry(chunks, jobId, retryCount = 0) {
+  const processingState = processingStates.get(jobId);
+  const results = [];
+  const maxConcurrent = 3; // 同時処理数
+  const maxRetries = 2; // チャンク単位でのリトライ回数
+
+  for (let i = 0; i < chunks.length; i += maxConcurrent) {
+    const batch = chunks.slice(i, i + maxConcurrent);
+    
+    const batchPromises = batch.map(async (chunk) => {
+      let attempt = 0;
+      let lastError;
+      
+      while (attempt <= maxRetries) {
+        try {
+          chunk.status = 'processing';
+          processingState.lastUpdate = new Date().toISOString();
+          
+          const result = await processAudioChunk(chunk, processingState.vimeoUrl);
+          
+          chunk.status = 'completed';
+          chunk.result = result;
+          processingState.completedChunks++;
+          processingState.progress = Math.round((processingState.completedChunks / processingState.totalChunks) * 100);
+          processingState.lastUpdate = new Date().toISOString();
+          
+          return result;
+          
+        } catch (error) {
+          lastError = error;
+          attempt++;
+          console.error(`Chunk ${chunk.id} processing error (attempt ${attempt}):`, error);
+          
+          if (attempt <= maxRetries) {
+            chunk.status = 'retrying';
+            chunk.error = `再試行中... (${attempt}/${maxRetries})`;
+            processingState.lastUpdate = new Date().toISOString();
+            
+            // 指数バックオフで待機
+            const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+          } else {
+            chunk.status = 'error';
+            chunk.error = `処理に失敗しました（${maxRetries + 1}回の試行後）: ${error.message}`;
+            processingState.lastUpdate = new Date().toISOString();
+            throw error;
+          }
+        }
+      }
+    });
+
+    const batchResults = await Promise.allSettled(batchPromises);
+    results.push(...batchResults);
+  }
+
+  return results;
+}
+
+/**
+ * チャンクを並列処理（従来版）
  */
 async function processChunksInParallel(chunks, jobId) {
   const processingState = processingStates.get(jobId);
@@ -349,7 +460,7 @@ async function processChunksInParallel(chunks, jobId) {
 async function processAudioChunk(chunk, vimeoUrl) {
   try {
     // 適応的辞書システムを統合
-    const { generatePhraseHints, detectLectureDomain } = require('../../lib/adaptive-dictionary');
+    const { generatePhraseHints, detectLectureDomain } = require('../../lib/text-processor');
     
     // 講義の分野を検出（サンプルテキストから）
     const sampleText = chunk.text || '';

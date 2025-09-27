@@ -56,20 +56,71 @@ export default async function handler(req, res) {
 }
 
 /**
- * ジョブステータスを取得（プレースホルダー）
+ * ジョブステータスを取得（実際の実装）
  */
 async function getJobStatus(jobId) {
   // 実際の実装では、データベースから取得
-  // ここではプレースホルダーとして実装
+  // ここでは、vimeo-transcribe.jsのprocessingStatesから取得
+  const { processingStates } = require('./vimeo-transcribe');
+  const job = processingStates.get(jobId);
+  
+  if (!job) {
+    return null;
+  }
+
+  // 推定完了時間を計算
+  let estimatedCompletion = null;
+  if (job.status === 'processing' && job.totalChunks > 0) {
+    const completedChunks = job.completedChunks || 0;
+    const remainingChunks = job.totalChunks - completedChunks;
+    const avgTimePerChunk = 30000; // 30秒/チャンク（推定）
+    const estimatedRemainingMs = remainingChunks * avgTimePerChunk;
+    estimatedCompletion = new Date(Date.now() + estimatedRemainingMs).toISOString();
+  }
+
   return {
-    status: 'processing',
-    progress: 45,
-    startTime: new Date().toISOString(),
-    lastUpdate: new Date().toISOString(),
-    estimatedCompletion: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-    error: null,
-    result: null
+    status: job.status,
+    progress: job.progress || 0,
+    startTime: job.startTime,
+    lastUpdate: job.lastUpdate,
+    estimatedCompletion,
+    error: job.error,
+    result: job.result,
+    currentStage: getCurrentStage(job),
+    retryCount: job.retryCount || 0,
+    totalChunks: job.totalChunks || 0,
+    completedChunks: job.completedChunks || 0,
+    canResume: job.status === 'error' || job.status === 'paused'
   };
+}
+
+/**
+ * 現在の処理段階を取得
+ */
+function getCurrentStage(job) {
+  if (!job) return '不明';
+  
+  switch (job.status) {
+    case 'initializing':
+      return '初期化中...';
+    case 'processing':
+      if (job.totalChunks > 0) {
+        const completed = job.completedChunks || 0;
+        const total = job.totalChunks;
+        return `チャンク処理中... (${completed}/${total})`;
+      }
+      return '音声ストリーム取得中...';
+    case 'completed':
+      return '処理完了';
+    case 'error':
+      return 'エラー発生';
+    case 'paused':
+      return '一時停止中';
+    case 'resuming':
+      return '再開中...';
+    default:
+      return '不明';
+  }
 }
 
 /**

@@ -53,7 +53,7 @@ export default function VimeoTranscribePage() {
         }
       } catch (err) {
         console.error('Status check error:', err);
-        if (err.name === 'AbortError') {
+        if (err instanceof Error && err.name === 'AbortError') {
           setError('タイムアウトが発生しました。ネットワーク接続を確認してください。');
         } else {
           setError('ステータス確認エラーが発生しました');
@@ -105,7 +105,7 @@ export default function VimeoTranscribePage() {
         setProcessing(false);
       }
     } catch (err) {
-      if (err.name === 'AbortError') {
+      if (err instanceof Error && err.name === 'AbortError') {
         setError('タイムアウトが発生しました。ネットワーク接続を確認してください。');
       } else {
         setError('通信エラーが発生しました');
