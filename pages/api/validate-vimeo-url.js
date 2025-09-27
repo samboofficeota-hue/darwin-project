@@ -25,6 +25,9 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'URLが必要です' });
     }
 
+    // デバッグログ
+    console.log('Vimeo URL validation request:', { url, hasToken: !!process.env.VIMEO_ACCESS_TOKEN });
+
     // Vimeo URLの検証と動画情報取得
     const videoInfo = await validateAndGetVideoInfo(url);
 
@@ -42,7 +45,17 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('Vimeo URL validation error:', error);
-    res.status(500).json({
+    
+    // エラーの種類に応じて適切なステータスコードを返す
+    const isClientError = error.message.includes('無効なVimeo URL') || 
+                         error.message.includes('動画が見つかりません') ||
+                         error.message.includes('アクセスが制限されています') ||
+                         error.message.includes('動画が長すぎます') ||
+                         error.message.includes('音声が含まれていない');
+    
+    const statusCode = isClientError ? 400 : 500;
+    
+    res.status(statusCode).json({
       error: 'URL検証中にエラーが発生しました',
       details: error.message,
       valid: false
