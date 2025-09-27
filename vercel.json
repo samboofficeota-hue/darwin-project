@@ -6,7 +6,11 @@
   "installCommand": "npm install",
   "functions": {
     "pages/api/**/*.js": {
-      "maxDuration": 60
+      "maxDuration": 300,
+      "memory": 3008
     }
+  },
+  "env": {
+    "VERCEL_MAX_PAYLOAD_SIZE": "50mb"
   }
 }

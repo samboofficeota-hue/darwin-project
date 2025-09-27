@@ -66,7 +66,9 @@ export default function TranscribePage() {
         setProgress(prev => Math.min(prev + 10, 90));
       }, 2000);
 
-      const response = await fetch('/api/transcribe', {
+      // 大きなファイルは直接Cloud Runに送信
+      const cloudRunUrl = 'https://darwin-project-574364248563.asia-northeast1.run.app/api/transcribe';
+      const response = await fetch(cloudRunUrl, {
         method: 'POST',
         body: formData,
       });
