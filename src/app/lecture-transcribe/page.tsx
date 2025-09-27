@@ -250,7 +250,7 @@ export default function LectureTranscribePage() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12">
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 py-12 font-sans">
       <div className="container mx-auto px-4 max-w-4xl">
         <div className="bg-white rounded-lg shadow-lg p-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-8 text-center">
@@ -298,7 +298,7 @@ export default function LectureTranscribePage() {
                   type="text"
                   value={lectureInfo.theme}
                   onChange={(e) => setLectureInfo(prev => ({ ...prev, theme: e.target.value }))}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500"
                   placeholder="例: 公益資本主義の未来像"
                 />
                 {errors.theme && <p className="text-red-600 text-sm mt-1">{errors.theme}</p>}
@@ -316,7 +316,7 @@ export default function LectureTranscribePage() {
                       ...prev, 
                       speaker: { ...prev.speaker, name: e.target.value }
                     }))}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500"
                     placeholder="例: 田中太郎"
                   />
                   {errors.speakerName && <p className="text-red-600 text-sm mt-1">{errors.speakerName}</p>}
@@ -333,7 +333,7 @@ export default function LectureTranscribePage() {
                       ...prev, 
                       speaker: { ...prev.speaker, title: e.target.value }
                     }))}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500"
                     placeholder="例: 東京大学教授"
                   />
                   {errors.speakerTitle && <p className="text-red-600 text-sm mt-1">{errors.speakerTitle}</p>}
@@ -351,7 +351,7 @@ export default function LectureTranscribePage() {
                     speaker: { ...prev.speaker, bio: e.target.value }
                   }))}
                   rows={3}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500"
                   placeholder="講演者の略歴を入力してください"
                 />
                 {errors.speakerBio && <p className="text-red-600 text-sm mt-1">{errors.speakerBio}</p>}
@@ -365,7 +365,7 @@ export default function LectureTranscribePage() {
                   value={lectureInfo.description}
                   onChange={(e) => setLectureInfo(prev => ({ ...prev, description: e.target.value }))}
                   rows={4}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500"
                   placeholder="講演の内容や目的について説明してください（50文字以上）"
                 />
                 <p className="text-sm text-gray-500 mt-1">
@@ -397,7 +397,7 @@ export default function LectureTranscribePage() {
                   value={vimeoUrl}
                   onChange={(e) => handleUrlChange(e.target.value)}
                   placeholder="https://vimeo.com/123456789"
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent text-gray-900 placeholder-gray-500"
                 />
                 {validatingUrl && (
                   <p className="text-blue-600 text-sm mt-2">URLを検証中...</p>
