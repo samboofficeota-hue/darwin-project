@@ -78,15 +78,15 @@ async function validateAndGetVideoInfo(url) {
 
     const videoId = match[1];
     
-    // Vimeo APIトークンの確認
-    if (!process.env.VIMEO_ACCESS_TOKEN) {
-      console.warn('VIMEO_ACCESS_TOKEN is not set, using mock data');
+    // Vimeo APIトークンの確認（レート制限回避のため一時的にモックデータを使用）
+    if (!process.env.VIMEO_ACCESS_TOKEN || process.env.VIMEO_ACCESS_TOKEN === 'mock') {
+      console.warn('Using mock data for Vimeo API (rate limit or token issue)');
       // モックデータを返す（開発環境用）
       return {
         videoId,
         title: `Vimeo動画 ${videoId}`,
         duration: 1800, // 30分
-        description: 'Vimeo APIトークンが設定されていないため、モックデータを表示しています。',
+        description: 'Vimeo APIのレート制限により、モックデータを表示しています。実際の動画情報は文字起こし処理時に取得されます。',
         thumbnail: null,
         embed: null,
         privacy: 'public',
@@ -110,6 +110,22 @@ async function validateAndGetVideoInfo(url) {
         throw new Error('動画が見つかりません');
       } else if (response.status === 403) {
         throw new Error('動画へのアクセスが制限されています');
+      } else if (response.status === 429) {
+        // レート制限の場合はモックデータを返す
+        console.warn('Vimeo API rate limit reached, using mock data');
+        return {
+          videoId,
+          title: `Vimeo動画 ${videoId}`,
+          duration: 1800, // 30分
+          description: 'Vimeo APIのレート制限により、モックデータを表示しています。実際の動画情報は文字起こし処理時に取得されます。',
+          thumbnail: null,
+          embed: null,
+          privacy: 'public',
+          size: 0,
+          createdTime: new Date().toISOString(),
+          modifiedTime: new Date().toISOString(),
+          valid: true
+        };
       } else {
         throw new Error(`Vimeo API error: ${response.status}`);
       }
