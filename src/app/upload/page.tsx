@@ -94,7 +94,7 @@ export default function UploadPage() {
             音声ファイルアップロード
           </h1>
           <p className="text-center text-gray-600 mb-8">
-            GenSpark AIドライブに直接アップロードして、4段階の文字起こしを実行します
+            音声ファイルをアップロードして、文字起こしを実行します
           </p>
 
           {/* ファイル選択 */}
@@ -129,7 +129,7 @@ export default function UploadPage() {
               disabled={!file || uploading}
               className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed"
             >
-              {uploading ? 'アップロード中...' : 'GenSpark AIドライブにアップロード'}
+              {uploading ? 'アップロード中...' : 'ファイルをアップロード'}
             </button>
           </div>
 
@@ -161,7 +161,7 @@ export default function UploadPage() {
                   onClick={startTranscription}
                   className="bg-green-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-green-700"
                 >
-                  4段階文字起こしを開始
+                  文字起こしを開始
                 </button>
               </div>
             </div>

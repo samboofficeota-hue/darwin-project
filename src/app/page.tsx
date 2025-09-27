@@ -23,7 +23,7 @@ export default function Home() {
                 📚 RAGシステム
               </h2>
               <p className="text-gray-600">
-                講演録、文献、論文をGenSpark AIドライブで管理し、高度な検索・分析機能を提供
+                講演録、文献、論文をデータベースで管理し、高度な検索・分析機能を提供
               </p>
             </div>
             
@@ -63,7 +63,7 @@ export default function Home() {
                 <div>
                   <h3 className="text-lg font-semibold text-gray-700 mb-3">AI処理・ストレージ</h3>
                   <ul className="text-gray-600 space-y-2">
-                    <li>• GenSpark AIドライブ</li>
+                    <li>• データベース</li>
                     <li>• 256-bit AES暗号化</li>
                     <li>• プライベート環境</li>
                   </ul>

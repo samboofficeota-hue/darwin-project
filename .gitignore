@@ -87,3 +87,4 @@ api_keys.json
 # Generated content
 generated/
 output/
+.vercel

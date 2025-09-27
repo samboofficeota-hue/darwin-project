@@ -1,5 +1,5 @@
 /**
- * GenSpark AIドライブへの音声ファイルアップロードAPI
+ * 音声ファイルアップロードAPI
  * 公益資本主義「智の泉」プロジェクト用
  */
 
@@ -45,8 +45,8 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'サポートされていないファイル形式です' });
     }
 
-    // GenSpark AIドライブへのアップロード処理
-    const uploadResult = await uploadToGenSparkAI(file, folder_path);
+    // ファイルアップロード処理
+    const uploadResult = await uploadFile(file, folder_path);
 
     if (uploadResult.status === 'error') {
       return res.status(500).json({ error: uploadResult.message });
@@ -61,25 +61,25 @@ export default async function handler(req, res) {
 }
 
 /**
- * GenSpark AIドライブにファイルをアップロード
- * 実際の実装では、GenSparkのチャット環境経由でアップロード
+ * ファイルをアップロード
+ * 実際の実装では、データベースまたはストレージに保存
  */
-async function uploadToGenSparkAI(file, folder_path) {
+async function uploadFile(file, folder_path) {
   try {
-    // ファイルIDを生成（実際はGenSparkから取得）
+    // ファイルIDを生成
     const file_id = generateFileId();
     
     // 一時URLを生成（30分有効）
-    const temp_url = `https://www.genspark.ai/aidrive/preview/?f_id=${file_id}`;
+    const temp_url = `https://darwin-project.vercel.app/files/${file_id}`;
     
     // 実際のアップロード処理
-    // ここでは、GenSparkのチャット環境経由でアップロードを実行
-    const uploadSuccess = await executeGenSparkUpload(file, folder_path, file_id);
+    // ここでは、ローカルストレージまたはデータベースに保存
+    const uploadSuccess = await executeFileUpload(file, folder_path, file_id);
     
     if (!uploadSuccess) {
       return {
         status: 'error',
-        message: 'GenSpark AIドライブへのアップロードに失敗しました'
+        message: 'ファイルのアップロードに失敗しました'
       };
     }
 
@@ -91,7 +91,7 @@ async function uploadToGenSparkAI(file, folder_path) {
       temp_url: temp_url,
       upload_time: new Date().toISOString(),
       file_size: file.size,
-      message: 'GenSpark AIドライブにアップロードされました'
+      message: 'ファイルがアップロードされました'
     };
 
   } catch (error) {
@@ -111,16 +111,16 @@ function generateFileId() {
 }
 
 /**
- * GenSparkチャット環境経由でのアップロード実行
- * 実際の実装では、GenSparkのAPIまたはチャット環境との連携
+ * ファイルアップロード実行
+ * 実際の実装では、データベースまたはストレージに保存
  */
-async function executeGenSparkUpload(file, folder_path, file_id) {
+async function executeFileUpload(file, folder_path, file_id) {
   try {
     // プレースホルダー実装
-    // 実際には、GenSparkのチャット環境経由でアップロードを実行
+    // 実際には、データベースまたはストレージに保存
     
     // ファイルの基本情報をログに出力
-    console.log('GenSpark Upload:', {
+    console.log('File Upload:', {
       filename: file.name,
       size: file.size,
       type: file.type,
@@ -133,7 +133,7 @@ async function executeGenSparkUpload(file, folder_path, file_id) {
     return true;
 
   } catch (error) {
-    console.error('GenSpark upload error:', error);
+    console.error('File upload error:', error);
     return false;
   }
 }
