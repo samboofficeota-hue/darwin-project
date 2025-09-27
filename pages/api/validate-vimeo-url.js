@@ -139,9 +139,13 @@ async function validateAndGetVideoInfo(url) {
     }
 
     // 動画の音声をチェック
+    console.log('Video data has_audio:', videoData.has_audio);
+    console.log('Video data files:', videoData.files);
+    
     const hasAudio = videoData.has_audio === true;
 
     if (!hasAudio) {
+      console.log('Audio check failed, has_audio:', videoData.has_audio);
       throw new Error('この動画には音声が含まれていません。音声付きの動画を選択してください。');
     }
     
