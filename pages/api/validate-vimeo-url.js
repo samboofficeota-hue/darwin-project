@@ -138,13 +138,11 @@ async function validateAndGetVideoInfo(url) {
       throw new Error('動画が長すぎます（最大4時間）');
     }
 
-    // 動画の品質をチェック
-    const hasAudio = videoData.files && videoData.files.some(file => 
-      file.quality === 'hls' || file.quality === 'hd' || file.quality === 'sd'
-    );
+    // 動画の音声をチェック
+    const hasAudio = videoData.has_audio === true;
 
     if (!hasAudio) {
-      throw new Error('音声が含まれていない動画です');
+      throw new Error('この動画には音声が含まれていません。音声付きの動画を選択してください。');
     }
     
     return {
