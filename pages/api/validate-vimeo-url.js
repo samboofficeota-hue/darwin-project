@@ -68,21 +68,26 @@ export default async function handler(req, res) {
  */
 async function validateAndGetVideoInfo(url) {
   try {
+    console.log('Validating URL:', url);
+    
     // Vimeo URLの正規表現パターン
     const vimeoPattern = /(?:vimeo\.com\/)(?:.*\/)?(\d+)/;
     const match = url.match(vimeoPattern);
+    
+    console.log('URL match result:', match);
     
     if (!match) {
       throw new Error('無効なVimeo URLです。正しい形式のURLを入力してください。');
     }
 
     const videoId = match[1];
+    console.log('Extracted video ID:', videoId);
     
     // Vimeo APIトークンの確認（レート制限回避のため一時的にモックデータを使用）
     if (!process.env.VIMEO_ACCESS_TOKEN || process.env.VIMEO_ACCESS_TOKEN === 'mock') {
       console.warn('Using mock data for Vimeo API (rate limit or token issue)');
       // モックデータを返す（開発環境用）
-      return {
+      const mockData = {
         videoId,
         title: `Vimeo動画 ${videoId}`,
         duration: 1800, // 30分
@@ -95,6 +100,8 @@ async function validateAndGetVideoInfo(url) {
         modifiedTime: new Date().toISOString(),
         valid: true
       };
+      console.log('Returning mock data:', mockData);
+      return mockData;
     }
     
     // Vimeo APIを使用して動画情報を取得
