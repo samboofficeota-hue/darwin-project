@@ -93,7 +93,7 @@ async function startNewTranscriptionJob(vimeoUrl, lectureInfo, res) {
       status: 'started',
       jobId,
       message: '文字起こし処理を開始しました',
-      estimatedDuration: estimateProcessingTime(videoInfo.duration)
+      estimatedDuration: estimateProcessingTime(videoInfo.duration || 0)
     });
 
   } catch (error) {
@@ -163,7 +163,7 @@ async function processTranscriptionAsync(jobId) {
       saveJobState(jobId, processingState);
 
       // 1. 音声をチャンクに分割
-      const chunks = splitAudioIntoChunks(processingState.videoInfo.duration);
+      const chunks = splitAudioIntoChunks(processingState.videoInfo.duration || 0);
       
       processingState.chunks = chunks;
       processingState.totalChunks = chunks.length;
@@ -239,13 +239,22 @@ async function validateVimeoUrl(vimeoUrl) {
 
     const videoData = await response.json();
     
+    // デバッグログを追加
+    console.log('Vimeo API response:', {
+      videoId,
+      name: videoData.name,
+      duration: videoData.duration,
+      hasPictures: !!videoData.pictures,
+      hasEmbed: !!videoData.embed
+    });
+    
     return {
       videoId,
-      title: videoData.name,
-      duration: videoData.duration,
-      description: videoData.description,
-      thumbnail: videoData.pictures?.sizes?.[0]?.link,
-      embed: videoData.embed?.html
+      title: videoData.name || 'Unknown Title',
+      duration: videoData.duration || 0,
+      description: videoData.description || '',
+      thumbnail: videoData.pictures?.sizes?.[0]?.link || '',
+      embed: videoData.embed?.html || ''
     };
 
   } catch (error) {
@@ -258,13 +267,15 @@ async function validateVimeoUrl(vimeoUrl) {
  * 音声をチャンクに分割
  */
 function splitAudioIntoChunks(duration) {
+  // デフォルトの動画長を設定（5分）
+  const safeDuration = duration || 300;
   const chunkDuration = 300; // 5分間のチャンク
-  const totalChunks = Math.ceil(duration / chunkDuration);
+  const totalChunks = Math.ceil(safeDuration / chunkDuration);
   const chunks = [];
 
   for (let i = 0; i < totalChunks; i++) {
     const startTime = i * chunkDuration;
-    const endTime = Math.min((i + 1) * chunkDuration, duration);
+    const endTime = Math.min((i + 1) * chunkDuration, safeDuration);
     
     chunks.push({
       id: `chunk_${i}`,
@@ -453,5 +464,6 @@ function generateJobId() {
  */
 function estimateProcessingTime(duration) {
   // 1分の音声に対して約2-3分の処理時間を想定
-  return Math.ceil(duration * 2.5);
+  const safeDuration = duration || 300; // デフォルト5分
+  return Math.ceil(safeDuration * 2.5);
 }
