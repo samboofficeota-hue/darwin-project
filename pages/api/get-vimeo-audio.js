@@ -45,18 +45,7 @@ export default async function handler(req, res) {
 
     console.log(`Getting audio for video ID: ${videoId}, start: ${startTime}s, duration: ${duration}s`);
 
-    // 一時的にモック機能を追加（Vimeo APIトークンなしでも動作）
-    if (!process.env.VIMEO_ACCESS_TOKEN || process.env.VIMEO_ACCESS_TOKEN === 'your_vimeo_token') {
-      console.log('Vimeo APIトークンが設定されていないため、モック音声データを返します');
-      return res.status(200).json({
-        success: true,
-        audioData: 'mock_audio_data_base64_encoded',
-        format: 'mp4',
-        duration: duration,
-        startTime: startTime,
-        message: 'モック音声データ（実際のVimeo APIトークンが必要です）'
-      });
-    }
+    // Vimeo APIから実際の音声データを取得
 
     // Vimeo APIから動画のダウンロードリンクを取得
     const downloadInfo = await getVimeoDownloadLinks(videoId);
