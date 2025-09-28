@@ -1,11 +1,9 @@
 /**
  * Google Speech-to-Text APIを使用した文字起こし機能
- * 講演動画（1時間以上の長尺）に対応
+ * 音声データを直接受け取って文字起こしを実行
  */
 
 import { SpeechClient } from '@google-cloud/speech';
-import fs from 'fs';
-import path from 'path';
 
 // Google Cloud Speech-to-Text クライアントの初期化
 const speechClient = new SpeechClient({
@@ -15,8 +13,9 @@ const speechClient = new SpeechClient({
 
 export const config = {
   api: {
-    bodyParser: false, // ファイルアップロードのため無効化
-    sizeLimit: '2gb', // 2時間の動画ファイル対応
+    bodyParser: {
+      sizeLimit: '50mb',
+    },
   },
 };
 
@@ -36,51 +35,23 @@ export default async function handler(req, res) {
   }
 
   try {
-    // ファイルアップロードの処理（Next.js 14対応）
-    const formData = await req.formData();
-    const audioFile = formData.get('audio');
+    const { audioData, format = 'mp4', startTime = 0, duration = 300 } = req.body;
 
-    if (!audioFile || typeof audioFile === 'string') {
-      return res.status(400).json({ error: '音声ファイルが指定されていません' });
+    if (!audioData) {
+      return res.status(400).json({ error: '音声データが必要です' });
     }
 
-    // ファイル形式の検証
-    const allowedTypes = ['audio/mpeg', 'audio/wav', 'audio/mp4', 'audio/m4a', 'video/mp4'];
-    if (!allowedTypes.includes(audioFile.type)) {
-      return res.status(400).json({ 
-        error: 'サポートされていないファイル形式です',
-        supportedTypes: allowedTypes
-      });
-    }
-
-    // ファイルサイズの検証
-    const maxSize = 2 * 1024 * 1024 * 1024; // 2GB
-    if (audioFile.size > maxSize) {
-      return res.status(400).json({ error: 'ファイルサイズが大きすぎます（最大2GB）' });
-    }
-
-    // 一時ファイルとして保存
-    const uploadDir = process.env.UPLOAD_DIR || '/tmp/uploads';
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
-    
-    const tempFilePath = path.join(uploadDir, `temp-${Date.now()}-${audioFile.name}`);
-    const arrayBuffer = await audioFile.arrayBuffer();
-    fs.writeFileSync(tempFilePath, Buffer.from(arrayBuffer));
+    // Base64デコード
+    const audioBuffer = Buffer.from(audioData, 'base64');
 
     // 文字起こしの実行
-    const transcriptionResult = await transcribeAudio(tempFilePath, audioFile.type);
-
-    // 一時ファイルの削除
-    fs.unlinkSync(tempFilePath);
+    const transcriptionResult = await transcribeAudio(audioBuffer, format, startTime, duration);
 
     res.status(200).json({
       status: 'success',
       transcription: transcriptionResult,
-      filename: audioFile.name,
-      fileSize: audioFile.size,
-      duration: transcriptionResult.duration || 'unknown'
+      startTime,
+      duration: transcriptionResult.duration || duration
     });
 
   } catch (error) {
@@ -95,10 +66,10 @@ export default async function handler(req, res) {
 /**
  * Google Speech-to-Text APIを使用して音声を文字起こし
  */
-async function transcribeAudio(filePath, mimeType) {
+async function transcribeAudio(audioBuffer, format, startTime, duration) {
   try {
-    // 音声ファイルを読み込み
-    const audioBytes = fs.readFileSync(filePath).toString('base64');
+    // 音声データをBase64エンコード
+    const audioBytes = audioBuffer.toString('base64');
 
     // 音声設定
     const audio = {
@@ -107,8 +78,8 @@ async function transcribeAudio(filePath, mimeType) {
 
     // 言語設定（日本語）
     const config = {
-      encoding: getAudioEncoding(mimeType),
-      sampleRateHertz: 16000,
+      encoding: getAudioEncoding(format),
+      sampleRateHertz: 44100,
       languageCode: 'ja-JP',
       alternativeLanguageCodes: ['en-US'], // 英語も対応
       enableAutomaticPunctuation: true,
@@ -144,8 +115,10 @@ async function transcribeAudio(filePath, mimeType) {
       text: fullText,
       segments: transcriptions,
       totalConfidence: calculateAverageConfidence(transcriptions),
-      duration: calculateDuration(transcriptions),
-      wordCount: fullText.split(' ').length
+      duration: duration,
+      wordCount: fullText.split(' ').length,
+      startTime: startTime,
+      endTime: startTime + duration
     };
 
   } catch (error) {
@@ -155,17 +128,17 @@ async function transcribeAudio(filePath, mimeType) {
 }
 
 /**
- * MIMEタイプから音声エンコーディングを取得
+ * フォーマットから音声エンコーディングを取得
  */
-function getAudioEncoding(mimeType) {
+function getAudioEncoding(format) {
   const encodingMap = {
-    'audio/mpeg': 'MP3',
-    'audio/wav': 'LINEAR16',
-    'audio/mp4': 'MP4',
-    'audio/m4a': 'MP4',
-    'video/mp4': 'MP4',
+    'mp3': 'MP3',
+    'wav': 'LINEAR16',
+    'mp4': 'MP4',
+    'm4a': 'MP4',
+    'webm': 'WEBM_OPUS',
   };
-  return encodingMap[mimeType] || 'MP3';
+  return encodingMap[format] || 'MP4';
 }
 
 /**

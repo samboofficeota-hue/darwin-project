@@ -19,28 +19,14 @@ export default async function handler(req, res) {
   }
 
   try {
-    console.log('API handler called with method:', req.method);
-    console.log('Request body:', req.body);
-    
     const { url } = req.body;
 
     if (!url) {
-      console.log('No URL provided');
       return res.status(400).json({ error: 'URLが必要です' });
     }
 
-    // デバッグログ
-    console.log('Vimeo URL validation request:', { 
-      url, 
-      hasToken: !!process.env.VIMEO_ACCESS_TOKEN,
-      tokenLength: process.env.VIMEO_ACCESS_TOKEN?.length || 0,
-      tokenPrefix: process.env.VIMEO_ACCESS_TOKEN?.substring(0, 10) || 'none'
-    });
-
     // Vimeo URLの検証と動画情報取得
-    console.log('Calling validateAndGetVideoInfo...');
     const videoInfo = await validateAndGetVideoInfo(url);
-    console.log('validateAndGetVideoInfo result:', videoInfo);
 
     if (!videoInfo) {
       return res.status(400).json({ 
@@ -56,7 +42,6 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('Vimeo URL validation error:', error);
-    console.error('Error stack:', error.stack);
     
     // エラーの種類に応じて適切なステータスコードを返す
     const isClientError = error.message.includes('無効なVimeo URL') || 
@@ -68,8 +53,6 @@ export default async function handler(req, res) {
                          error.message.includes('Vimeo APIトークンが無効です');
     
     const statusCode = isClientError ? 400 : 500;
-    
-    console.log('Returning error response:', { statusCode, error: error.message });
     
     res.status(statusCode).json({
       error: 'URL検証中にエラーが発生しました',
@@ -84,24 +67,18 @@ export default async function handler(req, res) {
  */
 async function validateAndGetVideoInfo(url) {
   try {
-    console.log('Validating URL:', url);
-    
     // Vimeo URLの正規表現パターン
     const vimeoPattern = /(?:vimeo\.com\/)(?:.*\/)?(\d+)/;
     const match = url.match(vimeoPattern);
-    
-    console.log('URL match result:', match);
     
     if (!match) {
       throw new Error('無効なVimeo URLです。正しい形式のURLを入力してください。');
     }
 
     const videoId = match[1];
-    console.log('Extracted video ID:', videoId);
     
     // Vimeo APIトークンの確認
     if (!process.env.VIMEO_ACCESS_TOKEN) {
-      console.warn('VIMEO_ACCESS_TOKEN is not set');
       throw new Error('Vimeo APIトークンが設定されていません');
     }
     
@@ -115,7 +92,6 @@ async function validateAndGetVideoInfo(url) {
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error(`Vimeo API error ${response.status}:`, errorText);
       
       if (response.status === 404) {
         throw new Error('指定された動画が見つかりません。URLを確認してください。');
@@ -139,13 +115,9 @@ async function validateAndGetVideoInfo(url) {
     }
 
     // 動画の音声をチェック
-    console.log('Video data has_audio:', videoData.has_audio);
-    console.log('Video data files:', videoData.files);
-    
     const hasAudio = videoData.has_audio === true;
 
     if (!hasAudio) {
-      console.log('Audio check failed, has_audio:', videoData.has_audio);
       throw new Error('この動画には音声が含まれていません。音声付きの動画を選択してください。');
     }
     
@@ -164,8 +136,6 @@ async function validateAndGetVideoInfo(url) {
     };
 
   } catch (error) {
-    console.error('Vimeo video info error:', error);
-    
     // エラーの種類に応じて適切なメッセージを返す
     if (error.message.includes('動画が見つかりません')) {
       throw new Error('指定された動画が見つかりません。URLを確認してください。');

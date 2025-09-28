@@ -88,7 +88,16 @@ export default function VimeoTranscribePage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ vimeo_url: vimeoUrl }),
+        body: JSON.stringify({ 
+          vimeo_url: vimeoUrl,
+          lecture_info: {
+            theme: '講義録',
+            speaker: {
+              name: '講演者',
+              title: '講師'
+            }
+          }
+        }),
         signal: controller.signal
       });
       

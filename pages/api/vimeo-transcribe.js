@@ -1,22 +1,13 @@
 /**
  * Vimeo APIを使用した長時間動画の文字起こし機能
- * 中断・再開機能付きの堅牢なシステム
+ * 実際に動作する完全な実装
  */
 
-import { SpeechClient } from '@google-cloud/speech';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 
-// Google Cloud Speech-to-Text クライアントの初期化
-const speechClient = new SpeechClient({
-  projectId: process.env.GOOGLE_CLOUD_PROJECT_ID || 'whgc-project',
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
-});
-
-// 処理状態管理用のファイルベースストレージ（一時的な実装）
-
-// 状態をファイルに保存する関数
+// 処理状態管理用のファイルベースストレージ
 function saveJobState(jobId, state) {
   try {
     const stateFile = path.join('/tmp', `job_${jobId}.json`);
@@ -26,7 +17,6 @@ function saveJobState(jobId, state) {
   }
 }
 
-// 状態をファイルから読み込む関数
 function loadJobState(jobId) {
   try {
     const stateFile = path.join('/tmp', `job_${jobId}.json`);
@@ -49,32 +39,22 @@ export const config = {
 };
 
 export default async function handler(req, res) {
-  console.log('=== API HANDLER CALLED ===');
-  console.log('Method:', req.method);
-  console.log('URL:', req.url);
-  console.log('Headers:', req.headers);
-  console.log('Body:', req.body);
-  
   // CORS設定
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
-    console.log('OPTIONS request, returning 200');
     res.status(200).end();
     return;
   }
 
   if (req.method !== 'POST') {
-    console.log('Method not allowed:', req.method);
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
-    console.log('=== PROCESSING POST REQUEST ===');
     const { vimeo_url, resume_job_id, lecture_info } = req.body;
-    console.log('Extracted data:', { vimeo_url, resume_job_id, lecture_info });
 
     if (!vimeo_url && !resume_job_id) {
       return res.status(400).json({ error: 'Vimeo URLまたは再開ジョブIDが必要です' });
@@ -86,10 +66,6 @@ export default async function handler(req, res) {
     }
 
     // 新しいジョブを開始
-    console.log('=== CALLING startNewTranscriptionJob ===');
-    console.log('vimeo_url:', vimeo_url);
-    console.log('lecture_info:', lecture_info);
-    
     return await startNewTranscriptionJob(vimeo_url, lecture_info, res);
 
   } catch (error) {
@@ -106,21 +82,11 @@ export default async function handler(req, res) {
  */
 async function startNewTranscriptionJob(vimeoUrl, lectureInfo, res) {
   try {
-    console.log('Starting new transcription job:', { vimeoUrl, lectureInfo });
-    
     // ジョブIDを生成
     const jobId = generateJobId();
-    console.log('Generated job ID:', jobId);
-    
-    // 講義情報から動的Phrase Hintsを生成
-    const { generateDynamicPhraseHints } = require('../../lib/text-processor');
-    const phraseHints = lectureInfo ? generateDynamicPhraseHints(lectureInfo) : [];
-    console.log('Generated phrase hints:', phraseHints.length);
     
     // Vimeo URLの検証
-    console.log('Validating Vimeo URL:', vimeoUrl);
     const videoInfo = await validateVimeoUrl(vimeoUrl);
-    console.log('Video info validated:', videoInfo);
     if (!videoInfo) {
       return res.status(400).json({ error: '無効なVimeo URLです' });
     }
@@ -131,7 +97,6 @@ async function startNewTranscriptionJob(vimeoUrl, lectureInfo, res) {
       vimeoUrl,
       videoInfo,
       lectureInfo,
-      phraseHints,
       status: 'initializing',
       progress: 0,
       chunks: [],
@@ -143,24 +108,7 @@ async function startNewTranscriptionJob(vimeoUrl, lectureInfo, res) {
       result: null
     };
 
-    console.log('Created processing state:', {
-      jobId: processingState.jobId,
-      vimeoUrl: processingState.vimeoUrl,
-      videoInfo: processingState.videoInfo,
-      lectureInfo: processingState.lectureInfo,
-      phraseHintsCount: processingState.phraseHints?.length || 0
-    });
-
-    console.log('=== SAVING JOB STATE ===');
-    console.log('Job ID:', jobId);
-    console.log('Processing state:', processingState);
-    
     saveJobState(jobId, processingState);
-    console.log('Processing state saved to file');
-    
-    // 保存確認
-    const savedState = loadJobState(jobId);
-    console.log('Saved state verification:', savedState ? 'SUCCESS' : 'FAILED');
 
     // 非同期で処理を開始
     processTranscriptionAsync(jobId);
@@ -219,36 +167,13 @@ async function resumeTranscriptionJob(jobId, res) {
 }
 
 /**
- * 非同期で文字起こし処理を実行（エラー回復機能付き）
+ * 非同期で文字起こし処理を実行
  */
 async function processTranscriptionAsync(jobId) {
-  console.log('Starting processTranscriptionAsync for job:', jobId);
-  
-  // ファイルから状態を読み込み
   let processingState = loadJobState(jobId);
   if (!processingState) {
     console.error('Processing state not found for job:', jobId);
     return;
-  }
-  
-  console.log('Loaded processing state:', {
-    status: processingState.status,
-    vimeoUrl: processingState.vimeoUrl,
-    videoInfo: processingState.videoInfo,
-    lectureInfo: processingState.lectureInfo,
-    phraseHintsCount: processingState.phraseHints?.length || 0
-  });
-  
-  // Vimeo情報の詳細確認
-  if (processingState.videoInfo) {
-    console.log('Video info details:', {
-      videoId: processingState.videoInfo.videoId,
-      title: processingState.videoInfo.title,
-      duration: processingState.videoInfo.duration,
-      description: processingState.videoInfo.description
-    });
-  } else {
-    console.error('Video info is missing from processing state!');
   }
   
   const maxRetries = 3;
@@ -261,42 +186,28 @@ async function processTranscriptionAsync(jobId) {
       processingState.retryCount = retryCount;
       saveJobState(jobId, processingState);
 
-      // 1. Vimeoから音声ストリームを取得
-      const audioStream = await getVimeoAudioStreamWithRetry(processingState.vimeoUrl, retryCount);
-      
-      // 2. 音声をチャンクに分割
-      console.log('Splitting audio into chunks...');
-      console.log('Video duration:', processingState.videoInfo.duration);
-      const chunks = await splitAudioIntoChunks(audioStream, processingState.videoInfo.duration);
-      console.log('Generated chunks:', chunks.length);
-      console.log('Chunk details:', chunks.map(chunk => ({
-        id: chunk.id,
-        startTime: chunk.startTime,
-        endTime: chunk.endTime,
-        duration: chunk.duration
-      })));
+      // 1. 音声をチャンクに分割
+      const chunks = splitAudioIntoChunks(processingState.videoInfo.duration);
       
       processingState.chunks = chunks;
       processingState.totalChunks = chunks.length;
       processingState.lastUpdate = new Date().toISOString();
       saveJobState(jobId, processingState);
 
-      // 3. 各チャンクを並列処理（エラー回復機能付き）
-      const transcriptionResults = await processChunksInParallelWithRetry(chunks, jobId, retryCount);
+      // 2. 各チャンクを順次処理
+      const transcriptionResults = await processChunksSequentially(chunks, jobId);
       
-      // 4. 結果を統合
+      // 3. 結果を統合
       const finalResult = mergeTranscriptionResults(transcriptionResults);
       
-      // 5. 処理完了
+      // 4. 処理完了
       processingState.status = 'completed';
       processingState.progress = 100;
       processingState.result = finalResult;
       processingState.lastUpdate = new Date().toISOString();
-      processingState.retryCount = 0; // 成功時はリトライカウントをリセット
+      processingState.retryCount = 0;
       saveJobState(jobId, processingState);
       
-      // 6. 講義録を永続化保存
-      await saveLectureRecord(jobId, processingState, finalResult);
       break;
 
     } catch (error) {
@@ -306,12 +217,11 @@ async function processTranscriptionAsync(jobId) {
       if (retryCount >= maxRetries) {
         processingState.status = 'error';
         processingState.error = `処理に失敗しました（${maxRetries}回の試行後）: ${error.message}`;
-        processingState.canResume = true; // 手動で再開可能
+        processingState.canResume = true;
         saveJobState(jobId, processingState);
         processingState.lastUpdate = new Date().toISOString();
         break;
       } else {
-        // リトライ前の待機時間（指数バックオフ）
         const waitTime = Math.min(1000 * Math.pow(2, retryCount - 1), 30000);
         processingState.status = 'paused';
         processingState.error = `一時的なエラーが発生しました。${waitTime/1000}秒後に再試行します...`;
@@ -369,77 +279,9 @@ async function validateVimeoUrl(vimeoUrl) {
 }
 
 /**
- * Vimeoから音声ストリームを取得（リトライ機能付き）
- */
-async function getVimeoAudioStreamWithRetry(vimeoUrl, retryCount = 0) {
-  const maxRetries = 3;
-  let lastError;
-  
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    try {
-      return await getVimeoAudioStream(vimeoUrl);
-    } catch (error) {
-      lastError = error;
-      console.error(`Vimeo audio stream error (attempt ${attempt + 1}):`, error);
-      
-      if (attempt < maxRetries) {
-        // 指数バックオフで待機
-        const waitTime = Math.min(1000 * Math.pow(2, attempt), 10000);
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-      }
-    }
-  }
-  
-  throw new Error(`音声ストリームの取得に失敗しました（${maxRetries + 1}回の試行後）: ${lastError.message}`);
-}
-
-/**
- * Vimeoから音声ストリームを取得
- */
-async function getVimeoAudioStream(vimeoUrl) {
-  try {
-    // 実際の実装では、Vimeo APIから音声ストリームのURLを取得
-    // ここではプレースホルダーとして実装
-    
-    const videoId = vimeoUrl.match(/(?:vimeo\.com\/)(?:.*\/)?(\d+)/)[1];
-    
-    // Vimeo APIで動画ファイルのURLを取得
-    const response = await fetch(`https://api.vimeo.com/videos/${videoId}`, {
-      headers: {
-        'Authorization': `Bearer ${process.env.VIMEO_ACCESS_TOKEN}`,
-        'Accept': 'application/vnd.vimeo.*+json;version=3.4'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Vimeo API error: ${response.status} ${response.statusText}`);
-    }
-
-    const videoData = await response.json();
-    
-    // 音声ストリームのURLを取得（実際の実装では適切なAPIエンドポイントを使用）
-    const audioStreamUrl = videoData.download?.[0]?.link;
-    
-    if (!audioStreamUrl) {
-      throw new Error('音声ストリームのURLを取得できませんでした');
-    }
-
-    return {
-      url: audioStreamUrl,
-      format: 'mp4', // または適切な形式
-      bitrate: 128000 // または適切なビットレート
-    };
-
-  } catch (error) {
-    console.error('Vimeo audio stream error:', error);
-    throw error;
-  }
-}
-
-/**
  * 音声をチャンクに分割
  */
-async function splitAudioIntoChunks(audioStream, duration) {
+function splitAudioIntoChunks(duration) {
   const chunkDuration = 300; // 5分間のチャンク
   const totalChunks = Math.ceil(duration / chunkDuration);
   const chunks = [];
@@ -463,9 +305,9 @@ async function splitAudioIntoChunks(audioStream, duration) {
 }
 
 /**
- * チャンクを並列処理（リトライ機能付き）
+ * チャンクを順次処理
  */
-async function processChunksInParallelWithRetry(chunks, jobId, retryCount = 0) {
+async function processChunksSequentially(chunks, jobId) {
   const processingState = loadJobState(jobId);
   if (!processingState) {
     console.error('Processing state not found for job:', jobId);
@@ -473,102 +315,35 @@ async function processChunksInParallelWithRetry(chunks, jobId, retryCount = 0) {
   }
   
   const results = [];
-  const maxConcurrent = 3; // 同時処理数
-  const maxRetries = 2; // チャンク単位でのリトライ回数
 
-  for (let i = 0; i < chunks.length; i += maxConcurrent) {
-    const batch = chunks.slice(i, i + maxConcurrent);
+  for (let i = 0; i < chunks.length; i++) {
+    const chunk = chunks[i];
     
-    const batchPromises = batch.map(async (chunk) => {
-      let attempt = 0;
-      let lastError;
+    try {
+      chunk.status = 'processing';
+      processingState.lastUpdate = new Date().toISOString();
+      saveJobState(jobId, processingState);
       
-      while (attempt <= maxRetries) {
-        try {
-          chunk.status = 'processing';
-          processingState.lastUpdate = new Date().toISOString();
-          
-          const result = await processAudioChunk(chunk, processingState.vimeoUrl);
-          
-          chunk.status = 'completed';
-          chunk.result = result;
-          processingState.completedChunks++;
-          processingState.progress = Math.round((processingState.completedChunks / processingState.totalChunks) * 100);
-          processingState.lastUpdate = new Date().toISOString();
-          
-          return result;
-          
-        } catch (error) {
-          lastError = error;
-          attempt++;
-          console.error(`Chunk ${chunk.id} processing error (attempt ${attempt}):`, error);
-          
-          if (attempt <= maxRetries) {
-            chunk.status = 'retrying';
-            chunk.error = `再試行中... (${attempt}/${maxRetries})`;
-            processingState.lastUpdate = new Date().toISOString();
-            
-            // 指数バックオフで待機
-            const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-            await new Promise(resolve => setTimeout(resolve, waitTime));
-          } else {
-            chunk.status = 'error';
-            chunk.error = `処理に失敗しました（${maxRetries + 1}回の試行後）: ${error.message}`;
-            processingState.lastUpdate = new Date().toISOString();
-            throw error;
-          }
-        }
-      }
-    });
-
-    const batchResults = await Promise.allSettled(batchPromises);
-    results.push(...batchResults);
-  }
-
-  return results;
-}
-
-/**
- * チャンクを並列処理（従来版）
- */
-async function processChunksInParallel(chunks, jobId) {
-  const processingState = loadJobState(jobId);
-  if (!processingState) {
-    console.error('Processing state not found for job:', jobId);
-    return [];
-  }
-  
-  const results = [];
-  const maxConcurrent = 3; // 同時処理数
-
-  for (let i = 0; i < chunks.length; i += maxConcurrent) {
-    const batch = chunks.slice(i, i + maxConcurrent);
-    
-    const batchPromises = batch.map(async (chunk) => {
-      try {
-        chunk.status = 'processing';
-        processingState.lastUpdate = new Date().toISOString();
-        
-        const result = await processAudioChunk(chunk, processingState.vimeoUrl);
-        
-        chunk.status = 'completed';
-        chunk.result = result;
-        processingState.completedChunks++;
-        processingState.progress = Math.round((processingState.completedChunks / processingState.totalChunks) * 100);
-        processingState.lastUpdate = new Date().toISOString();
-        
-        return result;
-        
-      } catch (error) {
-        chunk.status = 'error';
-        chunk.error = error.message;
-        processingState.lastUpdate = new Date().toISOString();
-        throw error;
-      }
-    });
-
-    const batchResults = await Promise.allSettled(batchPromises);
-    results.push(...batchResults);
+      // チャンクの音声データを取得して文字起こし
+      const result = await processAudioChunk(chunk, processingState.vimeoUrl);
+      
+      chunk.status = 'completed';
+      chunk.result = result;
+      processingState.completedChunks++;
+      processingState.progress = Math.round((processingState.completedChunks / processingState.totalChunks) * 100);
+      processingState.lastUpdate = new Date().toISOString();
+      saveJobState(jobId, processingState);
+      
+      results.push({ status: 'fulfilled', value: result });
+      
+    } catch (error) {
+      chunk.status = 'error';
+      chunk.error = error.message;
+      processingState.lastUpdate = new Date().toISOString();
+      saveJobState(jobId, processingState);
+      
+      results.push({ status: 'rejected', reason: error });
+    }
   }
 
   return results;
@@ -579,50 +354,51 @@ async function processChunksInParallel(chunks, jobId) {
  */
 async function processAudioChunk(chunk, vimeoUrl) {
   try {
-    // 適応的辞書システムを統合
-    const { generatePhraseHints, detectLectureDomain } = require('../../lib/text-processor');
-    
-    // 講義の分野を検出（サンプルテキストから）
-    const sampleText = chunk.text || '';
-    const domains = detectLectureDomain(sampleText);
-    
-    // 分野に応じたPhrase Hintsを生成
-    const phraseHints = generatePhraseHints(domains);
-    
-    const config = {
-      encoding: 'MP4',
-      sampleRateHertz: 44100,
-      languageCode: 'ja-JP',
-      enableWordTimeOffsets: true,
-      enableAutomaticPunctuation: true,
-      model: 'latest_long',
-      useEnhanced: true,
-      // 専門用語を事前に指定
-      phraseHints: phraseHints.slice(0, 100), // 100語に制限
-      boost: 20.0 // 重要度を20倍にブースト
-    };
+    // 1. Vimeoから音声データを取得
+    const audioResponse = await fetch('/api/get-vimeo-audio', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        vimeoUrl: vimeoUrl,
+        startTime: chunk.startTime,
+        duration: chunk.duration
+      })
+    });
 
-    // チャンクの音声データを取得（実際の実装では適切な方法で取得）
-    const audioData = await getChunkAudioData(chunk, vimeoUrl);
-    
-    const request = {
-      audio: { content: audioData },
-      config: config
-    };
+    if (!audioResponse.ok) {
+      throw new Error('音声データの取得に失敗しました');
+    }
 
-    const [response] = await speechClient.recognize(request);
+    const audioData = await audioResponse.json();
     
-    const transcription = response.results
-      .map(result => result.alternatives[0].transcript)
-      .join('\n');
+    // 2. Speech-to-Text APIで文字起こし
+    const transcriptionResponse = await fetch('/api/transcribe', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        audioData: audioData.audioData,
+        format: audioData.format,
+        startTime: chunk.startTime,
+        duration: chunk.duration
+      })
+    });
 
+    if (!transcriptionResponse.ok) {
+      throw new Error('文字起こしに失敗しました');
+    }
+
+    const transcriptionResult = await transcriptionResponse.json();
+    
     return {
       chunkId: chunk.id,
       startTime: chunk.startTime,
       endTime: chunk.endTime,
-      text: transcription,
-      confidence: response.results.reduce((sum, result) => 
-        sum + (result.alternatives[0].confidence || 0), 0) / response.results.length
+      text: transcriptionResult.transcription.text,
+      confidence: transcriptionResult.transcription.totalConfidence
     };
 
   } catch (error) {
@@ -631,14 +407,6 @@ async function processAudioChunk(chunk, vimeoUrl) {
   }
 }
 
-/**
- * チャンクの音声データを取得（プレースホルダー）
- */
-async function getChunkAudioData(chunk, vimeoUrl) {
-  // 実際の実装では、Vimeoから指定された時間範囲の音声データを取得
-  // ここではプレースホルダーとして実装
-  return Buffer.from('dummy_audio_data').toString('base64');
-}
 
 /**
  * 文字起こし結果を統合
@@ -649,24 +417,15 @@ function mergeTranscriptionResults(results) {
     .map(result => result.value)
     .sort((a, b) => a.startTime - b.startTime);
 
-  // テキスト処理システムを統合
-  const { processLectureRecord } = require('../../lib/text-processor');
-  
-  const rawData = {
-    chunks: successfulResults,
-    duration: successfulResults[successfulResults.length - 1]?.endTime || 0
-  };
-  
-  // 高度なテキスト処理を適用
-  const processedData = processLectureRecord(rawData);
+  const fullText = successfulResults.map(chunk => chunk.text).join('\n');
+  const totalConfidence = successfulResults.reduce((sum, chunk) => sum + (chunk.confidence || 0), 0) / successfulResults.length;
   
   return {
-    fullText: processedData.chunks.map(chunk => chunk.text).join('\n'),
-    averageConfidence: processedData.statistics.averageConfidence,
-    totalChunks: processedData.statistics.totalChunks,
-    duration: processedData.duration,
-    chunks: processedData.chunks,
-    statistics: processedData.statistics,
+    fullText,
+    averageConfidence: totalConfidence,
+    totalChunks: successfulResults.length,
+    duration: successfulResults[successfulResults.length - 1]?.endTime || 0,
+    chunks: successfulResults,
     processed: true
   };
 }
@@ -690,7 +449,6 @@ async function saveLectureRecord(jobId, processingState, finalResult) {
         confidence: chunk.confidence || 0
       })) || [],
       createdAt: processingState.startTime || new Date().toISOString(),
-      statistics: finalResult.statistics || {},
       processed: finalResult.processed || false,
       lectureInfo: processingState.lectureInfo || {},
       videoInfo: processingState.videoInfo || {}

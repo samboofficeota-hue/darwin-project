@@ -13,7 +13,15 @@ export default function TestVimeoPage() {
     setTestResult(null);
 
     try {
-      const response = await fetch('/api/test-vimeo');
+      const response = await fetch('/api/validate-vimeo-url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          vimeoUrl: 'https://vimeo.com/123456789' // テスト用のダミーURL
+        })
+      });
       const data = await response.json();
 
       if (response.ok) {
