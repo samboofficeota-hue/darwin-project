@@ -183,8 +183,16 @@ async function processTranscriptionAsync(jobId) {
       processingState.retryCount = retryCount;
       saveJobState(jobId, processingState);
 
+      // デバッグログを追加
+      console.log('Processing state:', {
+        jobId,
+        hasVideoInfo: !!processingState.videoInfo,
+        videoInfo: processingState.videoInfo,
+        duration: processingState.videoInfo?.duration
+      });
+      
       // 1. 音声をチャンクに分割
-      const chunks = splitAudioIntoChunks(processingState.videoInfo.duration || 0);
+      const chunks = splitAudioIntoChunks(processingState.videoInfo?.duration || 0);
       
       processingState.chunks = chunks;
       processingState.totalChunks = chunks.length;
