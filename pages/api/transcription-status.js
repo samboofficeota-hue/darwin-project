@@ -59,12 +59,24 @@ export default async function handler(req, res) {
  * ジョブステータスを取得（実際の実装）
  */
 async function getJobStatus(jobId) {
-  // 実際の実装では、データベースから取得
-  // ここでは、vimeo-transcribe.jsのprocessingStatesから取得
-  const { processingStates } = require('./vimeo-transcribe');
-  const job = processingStates.get(jobId);
-  
-  if (!job) {
+  // 一時的な解決策：ファイルベースの状態管理
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    const stateFile = path.join('/tmp', `job_${jobId}.json`);
+    
+    if (!fs.existsSync(stateFile)) {
+      return null;
+    }
+    
+    const jobData = fs.readFileSync(stateFile, 'utf8');
+    const job = JSON.parse(jobData);
+    
+    if (!job) {
+      return null;
+    }
+  } catch (error) {
+    console.error('Error reading job state:', error);
     return null;
   }
 

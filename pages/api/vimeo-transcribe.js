@@ -14,8 +14,33 @@ const speechClient = new SpeechClient({
   keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
 });
 
-// 処理状態管理用のデータベース（実際の実装では外部DBを使用）
-const processingStates = new Map();
+// 処理状態管理用のファイルベースストレージ（一時的な実装）
+const fs = require('fs');
+const path = require('path');
+
+// 状態をファイルに保存する関数
+function saveJobState(jobId, state) {
+  try {
+    const stateFile = path.join('/tmp', `job_${jobId}.json`);
+    fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
+  } catch (error) {
+    console.error('Error saving job state:', error);
+  }
+}
+
+// 状態をファイルから読み込む関数
+function loadJobState(jobId) {
+  try {
+    const stateFile = path.join('/tmp', `job_${jobId}.json`);
+    if (fs.existsSync(stateFile)) {
+      const data = fs.readFileSync(stateFile, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (error) {
+    console.error('Error loading job state:', error);
+  }
+  return null;
+}
 
 export const config = {
   api: {
@@ -98,7 +123,7 @@ async function startNewTranscriptionJob(vimeoUrl, lectureInfo, res) {
       result: null
     };
 
-    processingStates.set(jobId, processingState);
+    saveJobState(jobId, processingState);
 
     // 非同期で処理を開始
     processTranscriptionAsync(jobId);
@@ -121,7 +146,7 @@ async function startNewTranscriptionJob(vimeoUrl, lectureInfo, res) {
  */
 async function resumeTranscriptionJob(jobId, res) {
   try {
-    const processingState = processingStates.get(jobId);
+    const processingState = loadJobState(jobId);
     
     if (!processingState) {
       return res.status(404).json({ error: 'ジョブが見つかりません' });
@@ -138,6 +163,7 @@ async function resumeTranscriptionJob(jobId, res) {
     // 処理を再開
     processingState.status = 'resuming';
     processingState.lastUpdate = new Date().toISOString();
+    saveJobState(jobId, processingState);
     
     // 非同期で処理を再開
     processTranscriptionAsync(jobId);
@@ -168,6 +194,7 @@ async function processTranscriptionAsync(jobId) {
       processingState.status = 'processing';
       processingState.lastUpdate = new Date().toISOString();
       processingState.retryCount = retryCount;
+      saveJobState(jobId, processingState);
 
       // 1. Vimeoから音声ストリームを取得
       const audioStream = await getVimeoAudioStreamWithRetry(processingState.vimeoUrl, retryCount);
@@ -187,6 +214,7 @@ async function processTranscriptionAsync(jobId) {
       processingState.status = 'completed';
       processingState.progress = 100;
       processingState.result = finalResult;
+      saveJobState(jobId, processingState);
       processingState.lastUpdate = new Date().toISOString();
       processingState.retryCount = 0; // 成功時はリトライカウントをリセット
       break;
@@ -199,6 +227,7 @@ async function processTranscriptionAsync(jobId) {
         processingState.status = 'error';
         processingState.error = `処理に失敗しました（${maxRetries}回の試行後）: ${error.message}`;
         processingState.canResume = true; // 手動で再開可能
+        saveJobState(jobId, processingState);
         processingState.lastUpdate = new Date().toISOString();
         break;
       } else {
@@ -207,6 +236,7 @@ async function processTranscriptionAsync(jobId) {
         processingState.status = 'paused';
         processingState.error = `一時的なエラーが発生しました。${waitTime/1000}秒後に再試行します...`;
         processingState.lastUpdate = new Date().toISOString();
+        saveJobState(jobId, processingState);
         
         await new Promise(resolve => setTimeout(resolve, waitTime));
       }
