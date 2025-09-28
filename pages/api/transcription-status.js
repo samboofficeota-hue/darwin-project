@@ -76,35 +76,35 @@ async function getJobStatus(jobId) {
     if (!job) {
       return null;
     }
+    
+    // 推定完了時間を計算
+    let estimatedCompletion = null;
+    if (job.status === 'processing' && job.totalChunks > 0) {
+      const completedChunks = job.completedChunks || 0;
+      const remainingChunks = job.totalChunks - completedChunks;
+      const avgTimePerChunk = 30000; // 30秒/チャンク（推定）
+      const estimatedRemainingMs = remainingChunks * avgTimePerChunk;
+      estimatedCompletion = new Date(Date.now() + estimatedRemainingMs).toISOString();
+    }
+
+    return {
+      status: job.status,
+      progress: job.progress || 0,
+      startTime: job.startTime,
+      lastUpdate: job.lastUpdate,
+      estimatedCompletion,
+      error: job.error,
+      result: job.result,
+      currentStage: getCurrentStage(job),
+      retryCount: job.retryCount || 0,
+      totalChunks: job.totalChunks || 0,
+      completedChunks: job.completedChunks || 0,
+      canResume: job.status === 'error' || job.status === 'paused'
+    };
   } catch (error) {
     console.error('Error reading job state:', error);
     return null;
   }
-
-  // 推定完了時間を計算
-  let estimatedCompletion = null;
-  if (job.status === 'processing' && job.totalChunks > 0) {
-    const completedChunks = job.completedChunks || 0;
-    const remainingChunks = job.totalChunks - completedChunks;
-    const avgTimePerChunk = 30000; // 30秒/チャンク（推定）
-    const estimatedRemainingMs = remainingChunks * avgTimePerChunk;
-    estimatedCompletion = new Date(Date.now() + estimatedRemainingMs).toISOString();
-  }
-
-  return {
-    status: job.status,
-    progress: job.progress || 0,
-    startTime: job.startTime,
-    lastUpdate: job.lastUpdate,
-    estimatedCompletion,
-    error: job.error,
-    result: job.result,
-    currentStage: getCurrentStage(job),
-    retryCount: job.retryCount || 0,
-    totalChunks: job.totalChunks || 0,
-    completedChunks: job.completedChunks || 0,
-    canResume: job.status === 'error' || job.status === 'paused'
-  };
 }
 
 /**
