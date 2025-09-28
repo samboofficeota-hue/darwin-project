@@ -189,7 +189,21 @@ async function resumeTranscriptionJob(jobId, res) {
  * 非同期で文字起こし処理を実行（エラー回復機能付き）
  */
 async function processTranscriptionAsync(jobId) {
-  const processingState = processingStates.get(jobId);
+  console.log('Starting processTranscriptionAsync for job:', jobId);
+  
+  // ファイルから状態を読み込み
+  let processingState = loadJobState(jobId);
+  if (!processingState) {
+    console.error('Processing state not found for job:', jobId);
+    return;
+  }
+  
+  console.log('Loaded processing state:', {
+    status: processingState.status,
+    vimeoUrl: processingState.vimeoUrl,
+    videoInfo: processingState.videoInfo
+  });
+  
   const maxRetries = 3;
   let retryCount = 0;
   
@@ -405,7 +419,12 @@ async function splitAudioIntoChunks(audioStream, duration) {
  * チャンクを並列処理（リトライ機能付き）
  */
 async function processChunksInParallelWithRetry(chunks, jobId, retryCount = 0) {
-  const processingState = processingStates.get(jobId);
+  const processingState = loadJobState(jobId);
+  if (!processingState) {
+    console.error('Processing state not found for job:', jobId);
+    return [];
+  }
+  
   const results = [];
   const maxConcurrent = 3; // 同時処理数
   const maxRetries = 2; // チャンク単位でのリトライ回数
@@ -466,7 +485,12 @@ async function processChunksInParallelWithRetry(chunks, jobId, retryCount = 0) {
  * チャンクを並列処理（従来版）
  */
 async function processChunksInParallel(chunks, jobId) {
-  const processingState = processingStates.get(jobId);
+  const processingState = loadJobState(jobId);
+  if (!processingState) {
+    console.error('Processing state not found for job:', jobId);
+    return [];
+  }
+  
   const results = [];
   const maxConcurrent = 3; // 同時処理数
 
