@@ -282,7 +282,7 @@ async function validateVimeoUrl(vimeoUrl) {
  * 音声をチャンクに分割
  */
 function splitAudioIntoChunks(duration) {
-  const chunkDuration = 300; // 5分間のチャンク
+  const chunkDuration = 600; // 10分間のチャンク（レート制限対策）
   const totalChunks = Math.ceil(duration / chunkDuration);
   const chunks = [];
 
@@ -336,6 +336,13 @@ async function processChunksSequentially(chunks, jobId) {
       
       results.push({ status: 'fulfilled', value: result });
       
+      // レート制限回避のため、チャンク間に待機時間を追加
+      if (i < chunks.length - 1) {
+        const delay = 2000; // 2秒待機
+        console.log(`Waiting ${delay}ms before processing next chunk...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+      
     } catch (error) {
       chunk.status = 'error';
       chunk.error = error.message;
@@ -343,6 +350,13 @@ async function processChunksSequentially(chunks, jobId) {
       saveJobState(jobId, processingState);
       
       results.push({ status: 'rejected', reason: error });
+      
+      // エラー時はより長く待機
+      if (i < chunks.length - 1) {
+        const delay = 5000; // 5秒待機
+        console.log(`Error occurred. Waiting ${delay}ms before processing next chunk...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
   }
 

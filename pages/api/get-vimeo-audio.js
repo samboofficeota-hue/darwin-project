@@ -93,52 +93,82 @@ function extractVideoId(url) {
 }
 
 /**
- * Vimeo APIから動画のダウンロードリンクを取得
+ * Vimeo APIから動画のダウンロードリンクを取得（レート制限対応）
  */
 async function getVimeoDownloadLinks(videoId) {
-  try {
-    if (!process.env.VIMEO_ACCESS_TOKEN) {
-      throw new Error('Vimeo APIトークンが設定されていません');
-    }
+  const maxRetries = 3;
+  const baseDelay = 1000; // 1秒
 
-    // Vimeo APIで動画の詳細情報を取得
-    const response = await fetch(`https://api.vimeo.com/videos/${videoId}`, {
-      headers: {
-        'Authorization': `Bearer ${process.env.VIMEO_ACCESS_TOKEN}`,
-        'Accept': 'application/vnd.vimeo.*+json;version=3.4'
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      if (!process.env.VIMEO_ACCESS_TOKEN) {
+        throw new Error('Vimeo APIトークンが設定されていません');
       }
-    });
 
-    if (!response.ok) {
-      throw new Error(`Vimeo API error: ${response.status}`);
+      console.log(`Vimeo API request attempt ${attempt} for video ${videoId}`);
+
+      // Vimeo APIで動画の詳細情報を取得
+      const response = await fetch(`https://api.vimeo.com/videos/${videoId}`, {
+        headers: {
+          'Authorization': `Bearer ${process.env.VIMEO_ACCESS_TOKEN}`,
+          'Accept': 'application/vnd.vimeo.*+json;version=3.4'
+        }
+      });
+
+      if (response.status === 429) {
+        // レート制限エラーの場合
+        const retryAfter = response.headers.get('Retry-After');
+        const delay = retryAfter ? parseInt(retryAfter) * 1000 : baseDelay * Math.pow(2, attempt - 1);
+        
+        console.log(`Rate limited. Waiting ${delay}ms before retry ${attempt}/${maxRetries}`);
+        
+        if (attempt < maxRetries) {
+          await new Promise(resolve => setTimeout(resolve, delay));
+          continue;
+        } else {
+          throw new Error(`Vimeo API rate limit exceeded after ${maxRetries} attempts`);
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(`Vimeo API error: ${response.status}`);
+      }
+
+      const videoData = await response.json();
+      
+      // 動画ファイルの情報を取得
+      const files = videoData.files || [];
+      
+      // 音声付きのファイルを探す（MP4形式を優先）
+      const audioFile = files.find(file => 
+        file.type === 'video/mp4' && 
+        file.quality === 'hls' && 
+        file.size > 0
+      );
+
+      if (!audioFile) {
+        throw new Error('音声付きの動画ファイルが見つかりません');
+      }
+
+      return {
+        audioUrl: audioFile.link,
+        format: 'mp4',
+        size: audioFile.size,
+        quality: audioFile.quality
+      };
+
+    } catch (error) {
+      console.error(`Vimeo API error (attempt ${attempt}):`, error);
+      
+      if (attempt === maxRetries) {
+        throw error;
+      }
+      
+      // 指数バックオフで待機
+      const delay = baseDelay * Math.pow(2, attempt - 1);
+      console.log(`Waiting ${delay}ms before retry ${attempt + 1}/${maxRetries}`);
+      await new Promise(resolve => setTimeout(resolve, delay));
     }
-
-    const videoData = await response.json();
-    
-    // 動画ファイルの情報を取得
-    const files = videoData.files || [];
-    
-    // 音声付きのファイルを探す（MP4形式を優先）
-    const audioFile = files.find(file => 
-      file.type === 'video/mp4' && 
-      file.quality === 'hls' && 
-      file.size > 0
-    );
-
-    if (!audioFile) {
-      throw new Error('音声付きの動画ファイルが見つかりません');
-    }
-
-    return {
-      audioUrl: audioFile.link,
-      format: 'mp4',
-      size: audioFile.size,
-      quality: audioFile.quality
-    };
-
-  } catch (error) {
-    console.error('Error getting Vimeo download links:', error);
-    throw error;
   }
 }
 
