@@ -4,29 +4,7 @@
  */
 
 import crypto from 'crypto';
-
-// メモリベースの状態管理（Vercel対応）
-const jobStates = new Map();
-
-// 処理状態管理用のメモリベースストレージ
-function saveJobState(jobId, state) {
-  try {
-    console.log('Saving job state for:', jobId);
-    jobStates.set(jobId, state);
-  } catch (error) {
-    console.error('Error saving job state:', error);
-  }
-}
-
-function loadJobState(jobId) {
-  try {
-    console.log('Loading job state for:', jobId);
-    return jobStates.get(jobId);
-  } catch (error) {
-    console.error('Error loading job state:', error);
-  }
-  return null;
-}
+import { saveJobState, loadJobState, updateJobState } from '../../lib/storage';
 
 export const config = {
   api: {
@@ -280,7 +258,7 @@ async function validateVimeoUrl(vimeoUrl) {
  * 音声をチャンクに分割
  */
 function splitAudioIntoChunks(duration) {
-  const chunkDuration = 600; // 10分間のチャンク（レート制限対策）
+  const chunkDuration = 300; // 5分間のチャンク
   const totalChunks = Math.ceil(duration / chunkDuration);
   const chunks = [];
 
@@ -334,13 +312,6 @@ async function processChunksSequentially(chunks, jobId) {
       
       results.push({ status: 'fulfilled', value: result });
       
-      // レート制限回避のため、チャンク間に待機時間を追加
-      if (i < chunks.length - 1) {
-        const delay = 2000; // 2秒待機
-        console.log(`Waiting ${delay}ms before processing next chunk...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-      
     } catch (error) {
       chunk.status = 'error';
       chunk.error = error.message;
@@ -348,13 +319,6 @@ async function processChunksSequentially(chunks, jobId) {
       saveJobState(jobId, processingState);
       
       results.push({ status: 'rejected', reason: error });
-      
-      // エラー時はより長く待機
-      if (i < chunks.length - 1) {
-        const delay = 5000; // 5秒待機
-        console.log(`Error occurred. Waiting ${delay}ms before processing next chunk...`);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
     }
   }
 
@@ -366,16 +330,8 @@ async function processChunksSequentially(chunks, jobId) {
  */
 async function processAudioChunk(chunk, vimeoUrl) {
   try {
-    console.log(`Processing chunk ${chunk.id}: ${chunk.startTime}s - ${chunk.endTime}s`);
-    
     // 1. Vimeoから音声データを取得
-    const baseUrl = process.env.VERCEL_URL 
-      ? `https://${process.env.VERCEL_URL}` 
-      : 'http://localhost:3000';
-    
-    console.log(`Fetching audio from: ${baseUrl}/api/get-vimeo-audio`);
-    
-    const audioResponse = await fetch(`${baseUrl}/api/get-vimeo-audio`, {
+    const audioResponse = await fetch('/api/get-vimeo-audio', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -388,18 +344,13 @@ async function processAudioChunk(chunk, vimeoUrl) {
     });
 
     if (!audioResponse.ok) {
-      const errorText = await audioResponse.text();
-      console.error('Audio fetch failed:', errorText);
-      throw new Error(`音声データの取得に失敗しました: ${audioResponse.status}`);
+      throw new Error('音声データの取得に失敗しました');
     }
 
     const audioData = await audioResponse.json();
-    console.log(`Audio data received: ${audioData.audioData ? audioData.audioData.length : 0} characters`);
     
     // 2. Speech-to-Text APIで文字起こし
-    console.log(`Sending to transcription API: ${baseUrl}/api/transcribe`);
-    
-    const transcriptionResponse = await fetch(`${baseUrl}/api/transcribe`, {
+    const transcriptionResponse = await fetch('/api/transcribe', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -413,13 +364,10 @@ async function processAudioChunk(chunk, vimeoUrl) {
     });
 
     if (!transcriptionResponse.ok) {
-      const errorText = await transcriptionResponse.text();
-      console.error('Transcription failed:', errorText);
-      throw new Error(`文字起こしに失敗しました: ${transcriptionResponse.status}`);
+      throw new Error('文字起こしに失敗しました');
     }
 
     const transcriptionResult = await transcriptionResponse.json();
-    console.log(`Transcription result: ${transcriptionResult.transcript ? transcriptionResult.transcript.length : 0} characters`);
     
     return {
       chunkId: chunk.id,

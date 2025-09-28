@@ -1,10 +1,10 @@
 /**
  * 文字起こしジョブのステータス確認API
  * 中断・再開機能のサポート
+ * Redis永続化対応版
  */
 
-import fs from 'fs';
-import path from 'path';
+import { loadJobState } from '../../lib/storage';
 
 export default async function handler(req, res) {
   // CORS設定
@@ -28,8 +28,7 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'ジョブIDが必要です' });
     }
 
-    // 実際の実装では、データベースからジョブ情報を取得
-    // ここではプレースホルダーとして実装
+    // Redisからジョブ情報を取得
     const jobStatus = await getJobStatus(job_id);
 
     if (!jobStatus) {
@@ -58,25 +57,23 @@ export default async function handler(req, res) {
   }
 }
 
-// メモリベースの状態管理（Vercel対応）
-const jobStates = new Map();
-
 /**
- * ジョブステータスを取得（メモリベース）
+ * ジョブステータスを取得（Redis永続化版）
  */
 async function getJobStatus(jobId) {
   console.log('Checking job status for:', jobId);
   
   try {
-    // メモリからジョブ状態を取得
-    const job = jobStates.get(jobId);
+    // Redisからジョブ状態を取得
+    const job = await loadJobState(jobId);
+    console.log('Job found in Redis:', !!job);
     
     if (!job) {
-      console.log('Job not found in memory:', jobId);
+      console.log('Job not found in Redis:', jobId);
       return null;
     }
     
-    console.log('Found job in memory:', {
+    console.log('Job details:', {
       status: job.status,
       progress: job.progress,
       totalChunks: job.totalChunks,
@@ -113,25 +110,9 @@ async function getJobStatus(jobId) {
     return result;
     
   } catch (error) {
-    console.error('Error reading job state:', error);
+    console.error('Error reading job state from Redis:', error);
     return null;
   }
-}
-
-/**
- * ジョブ状態を保存（メモリベース）
- */
-export function saveJobState(jobId, state) {
-  console.log('Saving job state for:', jobId);
-  jobStates.set(jobId, state);
-}
-
-/**
- * ジョブ状態を読み込み（メモリベース）
- */
-export function loadJobState(jobId) {
-  console.log('Loading job state for:', jobId);
-  return jobStates.get(jobId);
 }
 
 /**
