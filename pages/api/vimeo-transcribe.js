@@ -30,9 +30,9 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { vimeo_url, resume_job_id, lecture_info } = req.body;
+    const { vimeoUrl, resume_job_id, lecture_info } = req.body;
 
-    if (!vimeo_url && !resume_job_id) {
+    if (!vimeoUrl && !resume_job_id) {
       return res.status(400).json({ error: 'Vimeo URLまたは再開ジョブIDが必要です' });
     }
 
@@ -42,7 +42,7 @@ export default async function handler(req, res) {
     }
 
     // 新しいジョブを開始
-    return await startNewTranscriptionJob(vimeo_url, lecture_info, res);
+    return await startNewTranscriptionJob(vimeoUrl, lecture_info, res);
 
   } catch (error) {
     console.error('Vimeo transcription error:', error);
