@@ -167,7 +167,7 @@ async function resumeTranscriptionJob(jobId, res) {
  * 非同期で文字起こし処理を実行
  */
 async function processTranscriptionAsync(jobId) {
-  let processingState = loadJobState(jobId);
+  let processingState = await loadJobState(jobId);
   if (!processingState) {
     console.error('Processing state not found for job:', jobId);
     return;
@@ -181,7 +181,7 @@ async function processTranscriptionAsync(jobId) {
       processingState.status = 'processing';
       processingState.lastUpdate = new Date().toISOString();
       processingState.retryCount = retryCount;
-      saveJobState(jobId, processingState);
+      await saveJobState(jobId, processingState);
 
       // デバッグログを追加
       console.log('Processing state:', {
@@ -197,7 +197,7 @@ async function processTranscriptionAsync(jobId) {
       processingState.chunks = chunks;
       processingState.totalChunks = chunks.length;
       processingState.lastUpdate = new Date().toISOString();
-      saveJobState(jobId, processingState);
+      await saveJobState(jobId, processingState);
 
       // 2. 各チャンクを順次処理
       const transcriptionResults = await processChunksSequentially(chunks, jobId);
@@ -211,7 +211,7 @@ async function processTranscriptionAsync(jobId) {
       processingState.result = finalResult;
       processingState.lastUpdate = new Date().toISOString();
       processingState.retryCount = 0;
-      saveJobState(jobId, processingState);
+      await saveJobState(jobId, processingState);
       
       break;
 
@@ -223,7 +223,7 @@ async function processTranscriptionAsync(jobId) {
         processingState.status = 'error';
         processingState.error = `処理に失敗しました（${maxRetries}回の試行後）: ${error.message}`;
         processingState.canResume = true;
-        saveJobState(jobId, processingState);
+        await saveJobState(jobId, processingState);
         processingState.lastUpdate = new Date().toISOString();
         break;
       } else {
@@ -231,7 +231,7 @@ async function processTranscriptionAsync(jobId) {
         processingState.status = 'paused';
         processingState.error = `一時的なエラーが発生しました。${waitTime/1000}秒後に再試行します...`;
         processingState.lastUpdate = new Date().toISOString();
-        saveJobState(jobId, processingState);
+        await saveJobState(jobId, processingState);
         
         await new Promise(resolve => setTimeout(resolve, waitTime));
       }
@@ -287,7 +287,7 @@ async function processChunksSequentially(chunks, jobId) {
     try {
       chunk.status = 'processing';
       processingState.lastUpdate = new Date().toISOString();
-      saveJobState(jobId, processingState);
+      await saveJobState(jobId, processingState);
       
       // チャンクの音声データを取得して文字起こし
       const result = await processAudioChunk(chunk, processingState.vimeoUrl);
@@ -297,7 +297,7 @@ async function processChunksSequentially(chunks, jobId) {
       processingState.completedChunks++;
       processingState.progress = Math.round((processingState.completedChunks / processingState.totalChunks) * 100);
       processingState.lastUpdate = new Date().toISOString();
-      saveJobState(jobId, processingState);
+      await saveJobState(jobId, processingState);
       
       results.push({ status: 'fulfilled', value: result });
       
@@ -305,7 +305,7 @@ async function processChunksSequentially(chunks, jobId) {
       chunk.status = 'error';
       chunk.error = error.message;
       processingState.lastUpdate = new Date().toISOString();
-      saveJobState(jobId, processingState);
+      await saveJobState(jobId, processingState);
       
       results.push({ status: 'rejected', reason: error });
     }
