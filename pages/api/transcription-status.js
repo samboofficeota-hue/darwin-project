@@ -6,6 +6,9 @@
 import fs from 'fs';
 import path from 'path';
 
+// メモリベースの状態管理（サーバーレス環境用）
+const processingStates = new Map();
+
 export default async function handler(req, res) {
   // CORS設定
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -62,49 +65,63 @@ export default async function handler(req, res) {
  * ジョブステータスを取得（実際の実装）
  */
 async function getJobStatus(jobId) {
-  // 一時的な解決策：ファイルベースの状態管理
-  try {
-    const stateFile = path.join('/tmp', `job_${jobId}.json`);
-    
-    if (!fs.existsSync(stateFile)) {
-      return null;
+  console.log('Checking job status for:', jobId);
+  
+  // 1. メモリから状態を取得
+  let job = processingStates.get(jobId);
+  console.log('Job from memory:', job ? job.status : 'not found');
+  
+  // 2. メモリにない場合はファイルから読み込み
+  if (!job) {
+    try {
+      const stateFile = path.join('/tmp', `job_${jobId}.json`);
+      console.log('Checking file:', stateFile);
+      
+      if (fs.existsSync(stateFile)) {
+        const jobData = fs.readFileSync(stateFile, 'utf8');
+        job = JSON.parse(jobData);
+        console.log('Job loaded from file:', job.status);
+        
+        // メモリにも保存
+        processingStates.set(jobId, job);
+      }
+    } catch (error) {
+      console.error('Error reading from file:', error);
     }
-    
-    const jobData = fs.readFileSync(stateFile, 'utf8');
-    const job = JSON.parse(jobData);
-    
-    if (!job) {
-      return null;
-    }
-    
-    // 推定完了時間を計算
-    let estimatedCompletion = null;
-    if (job.status === 'processing' && job.totalChunks > 0) {
-      const completedChunks = job.completedChunks || 0;
-      const remainingChunks = job.totalChunks - completedChunks;
-      const avgTimePerChunk = 30000; // 30秒/チャンク（推定）
-      const estimatedRemainingMs = remainingChunks * avgTimePerChunk;
-      estimatedCompletion = new Date(Date.now() + estimatedRemainingMs).toISOString();
-    }
-
-    return {
-      status: job.status,
-      progress: job.progress || 0,
-      startTime: job.startTime,
-      lastUpdate: job.lastUpdate,
-      estimatedCompletion,
-      error: job.error,
-      result: job.result,
-      currentStage: getCurrentStage(job),
-      retryCount: job.retryCount || 0,
-      totalChunks: job.totalChunks || 0,
-      completedChunks: job.completedChunks || 0,
-      canResume: job.status === 'error' || job.status === 'paused'
-    };
-  } catch (error) {
-    console.error('Error reading job state:', error);
+  }
+  
+  if (!job) {
+    console.log('Job not found in memory or file');
     return null;
   }
+  
+  // 推定完了時間を計算
+  let estimatedCompletion = null;
+  if (job.status === 'processing' && job.totalChunks > 0) {
+    const completedChunks = job.completedChunks || 0;
+    const remainingChunks = job.totalChunks - completedChunks;
+    const avgTimePerChunk = 30000; // 30秒/チャンク（推定）
+    const estimatedRemainingMs = remainingChunks * avgTimePerChunk;
+    estimatedCompletion = new Date(Date.now() + estimatedRemainingMs).toISOString();
+  }
+
+  const result = {
+    status: job.status,
+    progress: job.progress || 0,
+    startTime: job.startTime,
+    lastUpdate: job.lastUpdate,
+    estimatedCompletion,
+    error: job.error,
+    result: job.result,
+    currentStage: getCurrentStage(job),
+    retryCount: job.retryCount || 0,
+    totalChunks: job.totalChunks || 0,
+    completedChunks: job.completedChunks || 0,
+    canResume: job.status === 'error' || job.status === 'paused'
+  };
+  
+  console.log('Returning job status:', result.status);
+  return result;
 }
 
 /**
