@@ -125,6 +125,9 @@ export default function LectureTranscribePage() {
   };
 
   const validateVimeoUrl = async (url: string) => {
+    console.log('=== validateVimeoUrl called ===');
+    console.log('URL:', url);
+    
     setValidatingUrl(true);
     setUrlError(null);
     setVideoPreview(null);
@@ -182,8 +185,13 @@ export default function LectureTranscribePage() {
   };
 
   const handleTranscribe = async () => {
+    console.log('=== handleTranscribe called ===');
+    console.log('videoPreview:', videoPreview);
+    console.log('videoPreview?.valid:', videoPreview?.valid);
+    
     if (!videoPreview?.valid) {
       console.error('Video preview is not valid:', videoPreview);
+      setUrlError('動画の検証が完了していません。URLを確認してください。');
       return;
     }
 
