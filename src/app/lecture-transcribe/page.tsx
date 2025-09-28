@@ -211,12 +211,17 @@ export default function LectureTranscribePage() {
       };
       
       console.log('Sending request to /api/vimeo-transcribe:', requestData);
+      console.log('Request URL:', '/api/vimeo-transcribe');
+      console.log('Request method:', 'POST');
+      console.log('Request headers:', { 'Content-Type': 'application/json' });
       
       const response = await fetch('/api/vimeo-transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestData)
       });
+      
+      console.log('Fetch completed, response received');
 
       console.log('Response status:', response.status);
       console.log('Response headers:', Object.fromEntries(response.headers.entries()));

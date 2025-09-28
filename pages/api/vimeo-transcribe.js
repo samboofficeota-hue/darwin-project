@@ -49,22 +49,32 @@ export const config = {
 };
 
 export default async function handler(req, res) {
+  console.log('=== API HANDLER CALLED ===');
+  console.log('Method:', req.method);
+  console.log('URL:', req.url);
+  console.log('Headers:', req.headers);
+  console.log('Body:', req.body);
+  
   // CORS設定
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
+    console.log('OPTIONS request, returning 200');
     res.status(200).end();
     return;
   }
 
   if (req.method !== 'POST') {
+    console.log('Method not allowed:', req.method);
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
+    console.log('=== PROCESSING POST REQUEST ===');
     const { vimeo_url, resume_job_id, lecture_info } = req.body;
+    console.log('Extracted data:', { vimeo_url, resume_job_id, lecture_info });
 
     if (!vimeo_url && !resume_job_id) {
       return res.status(400).json({ error: 'Vimeo URLまたは再開ジョブIDが必要です' });
@@ -76,6 +86,10 @@ export default async function handler(req, res) {
     }
 
     // 新しいジョブを開始
+    console.log('=== CALLING startNewTranscriptionJob ===');
+    console.log('vimeo_url:', vimeo_url);
+    console.log('lecture_info:', lecture_info);
+    
     return await startNewTranscriptionJob(vimeo_url, lecture_info, res);
 
   } catch (error) {
@@ -137,8 +151,16 @@ async function startNewTranscriptionJob(vimeoUrl, lectureInfo, res) {
       phraseHintsCount: processingState.phraseHints?.length || 0
     });
 
+    console.log('=== SAVING JOB STATE ===');
+    console.log('Job ID:', jobId);
+    console.log('Processing state:', processingState);
+    
     saveJobState(jobId, processingState);
     console.log('Processing state saved to file');
+    
+    // 保存確認
+    const savedState = loadJobState(jobId);
+    console.log('Saved state verification:', savedState ? 'SUCCESS' : 'FAILED');
 
     // 非同期で処理を開始
     processTranscriptionAsync(jobId);
