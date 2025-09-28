@@ -182,25 +182,36 @@ export default function LectureTranscribePage() {
   };
 
   const handleTranscribe = async () => {
-    if (!videoPreview?.valid) return;
+    if (!videoPreview?.valid) {
+      console.error('Video preview is not valid:', videoPreview);
+      return;
+    }
+
+    console.log('=== STARTING TRANSCRIPTION ===');
+    console.log('Video preview:', videoPreview);
+    console.log('Lecture info:', lectureInfo);
+    console.log('Vimeo URL:', vimeoUrl);
 
     setProcessing(true);
     setStep('processing');
     setUrlError(null);
 
     try {
-      console.log('Starting transcription with:', { vimeo_url: vimeoUrl, lecture_info: lectureInfo });
+      const requestData = { 
+        vimeo_url: vimeoUrl,
+        lecture_info: lectureInfo
+      };
+      
+      console.log('Sending request to /api/vimeo-transcribe:', requestData);
       
       const response = await fetch('/api/vimeo-transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          vimeo_url: vimeoUrl,
-          lecture_info: lectureInfo
-        })
+        body: JSON.stringify(requestData)
       });
 
-      console.log('Transcription response status:', response.status);
+      console.log('Response status:', response.status);
+      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
 
       if (!response.ok) {
         const errorData = await response.text();
@@ -217,6 +228,8 @@ export default function LectureTranscribePage() {
         progress: 0,
         canResume: false
       });
+      
+      console.log('Job state set:', data.jobId);
     } catch (err) {
       console.error('Transcription error:', err);
       setUrlError(err instanceof Error ? err.message : 'エラーが発生しました');
