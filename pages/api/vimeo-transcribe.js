@@ -61,11 +61,32 @@ async function startNewTranscriptionJob(vimeoUrl, lectureInfo, res) {
     // ジョブIDを生成
     const jobId = generateJobId();
     
-    // Vimeo URLの検証
-    const videoInfo = await validateVimeoUrl(vimeoUrl);
-    if (!videoInfo) {
+    // Vimeo URLの検証（validate-vimeo-url.jsのAPIを呼び出し）
+    const validateResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://darwin-project-574364248563.asia-northeast1.run.app'}/api/validate-vimeo-url`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ url: vimeoUrl })
+    });
+    
+    if (!validateResponse.ok) {
+      return res.status(400).json({ error: 'Vimeo URLの検証に失敗しました' });
+    }
+    
+    const validateData = await validateResponse.json();
+    if (!validateData.valid) {
       return res.status(400).json({ error: '無効なVimeo URLです' });
     }
+    
+    const videoInfo = {
+      videoId: validateData.videoId,
+      title: validateData.title,
+      duration: validateData.duration,
+      description: validateData.description,
+      thumbnail: validateData.thumbnail,
+      embed: validateData.embed
+    };
 
     // 処理状態を初期化
     const processingState = {
@@ -210,58 +231,7 @@ async function processTranscriptionAsync(jobId) {
   }
 }
 
-/**
- * Vimeo URLの検証と動画情報取得
- */
-async function validateVimeoUrl(vimeoUrl) {
-  try {
-    // Vimeo URLの正規表現パターン
-    const vimeoPattern = /(?:vimeo\.com\/)(?:.*\/)?(\d+)/;
-    const match = vimeoUrl.match(vimeoPattern);
-    
-    if (!match) {
-      return null;
-    }
-
-    const videoId = match[1];
-    
-    // Vimeo APIを使用して動画情報を取得
-    const response = await fetch(`https://api.vimeo.com/videos/${videoId}`, {
-      headers: {
-        'Authorization': `Bearer ${process.env.VIMEO_ACCESS_TOKEN}`,
-        'Accept': 'application/vnd.vimeo.*+json;version=3.4'
-      }
-    });
-
-    if (!response.ok) {
-      throw new Error(`Vimeo API error: ${response.status}`);
-    }
-
-    const videoData = await response.json();
-    
-    // デバッグログを追加
-    console.log('Vimeo API response:', {
-      videoId,
-      name: videoData.name,
-      duration: videoData.duration,
-      hasPictures: !!videoData.pictures,
-      hasEmbed: !!videoData.embed
-    });
-    
-    return {
-      videoId,
-      title: videoData.name || 'Unknown Title',
-      duration: videoData.duration || 0,
-      description: videoData.description || '',
-      thumbnail: videoData.pictures?.sizes?.[0]?.link || '',
-      embed: videoData.embed?.html || ''
-    };
-
-  } catch (error) {
-    console.error('Vimeo URL validation error:', error);
-    return null;
-  }
-}
+// validateVimeoUrl関数は削除（validate-vimeo-url.jsのAPIを使用）
 
 /**
  * 音声をチャンクに分割
