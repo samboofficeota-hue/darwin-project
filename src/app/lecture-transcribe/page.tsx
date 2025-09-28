@@ -62,20 +62,30 @@ export default function LectureTranscribePage() {
     const interval = setInterval(async () => {
       try {
         const response = await fetch(`/api/transcription-status?job_id=${job.jobId}`);
+        
+        if (!response.ok) {
+          console.error('Status check failed:', response.status, response.statusText);
+          const errorData = await response.text();
+          console.error('Error response:', errorData);
+          return;
+        }
+        
         const data = await response.json();
+        console.log('Status check response:', data);
 
-        if (response.ok) {
-          setJob(prev => prev ? { ...prev, ...data } : null);
+        setJob(prev => prev ? { ...prev, ...data } : null);
 
-          if (data.status === 'completed') {
-            setProcessing(false);
-            setStep('result');
-          } else if (data.status === 'error') {
-            setProcessing(false);
-          }
+        if (data.status === 'completed') {
+          setProcessing(false);
+          setStep('result');
+        } else if (data.status === 'error') {
+          setProcessing(false);
+          setUrlError(data.error || '処理中にエラーが発生しました');
         }
       } catch (err) {
         console.error('Status check error:', err);
+        setUrlError('ステータス確認中にエラーが発生しました');
+        setProcessing(false);
       }
     }, 2000);
 
@@ -176,8 +186,11 @@ export default function LectureTranscribePage() {
 
     setProcessing(true);
     setStep('processing');
+    setUrlError(null);
 
     try {
+      console.log('Starting transcription with:', { vimeo_url: vimeoUrl, lecture_info: lectureInfo });
+      
       const response = await fetch('/api/vimeo-transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -187,19 +200,25 @@ export default function LectureTranscribePage() {
         })
       });
 
-      const data = await response.json();
+      console.log('Transcription response status:', response.status);
 
-      if (response.ok) {
-        setJob({
-          jobId: data.jobId,
-          status: 'initializing',
-          progress: 0,
-          canResume: false
-        });
-      } else {
-        throw new Error(data.error || '文字起こし開始に失敗しました');
+      if (!response.ok) {
+        const errorData = await response.text();
+        console.error('Transcription error response:', errorData);
+        throw new Error(`HTTP ${response.status}: ${errorData}`);
       }
+
+      const data = await response.json();
+      console.log('Transcription started successfully:', data);
+
+      setJob({
+        jobId: data.jobId,
+        status: 'initializing',
+        progress: 0,
+        canResume: false
+      });
     } catch (err) {
+      console.error('Transcription error:', err);
       setUrlError(err instanceof Error ? err.message : 'エラーが発生しました');
       setProcessing(false);
       setStep('url');
