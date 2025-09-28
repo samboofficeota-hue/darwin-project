@@ -83,21 +83,26 @@ export default function VimeoTranscribePage() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒タイムアウト
       
+      const requestBody = { 
+        vimeoUrl: vimeoUrl,
+        lecture_info: {
+          theme: '講義録',
+          speaker: {
+            name: '講演者',
+            title: '講師'
+          }
+        }
+      };
+      
+      console.log('Sending request with vimeoUrl:', vimeoUrl);
+      console.log('Request body:', requestBody);
+      
       const response = await fetch('https://darwin-project-574364248563.asia-northeast1.run.app/api/vimeo-transcribe', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ 
-          vimeoUrl: vimeoUrl,
-          lecture_info: {
-            theme: '講義録',
-            speaker: {
-              name: '講演者',
-              title: '講師'
-            }
-          }
-        }),
+        body: JSON.stringify(requestBody),
         signal: controller.signal
       });
       
