@@ -15,8 +15,6 @@ const speechClient = new SpeechClient({
 });
 
 // 処理状態管理用のファイルベースストレージ（一時的な実装）
-const fs = require('fs');
-const path = require('path');
 
 // 状態をファイルに保存する関数
 function saveJobState(jobId, state) {

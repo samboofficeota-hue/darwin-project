@@ -3,6 +3,9 @@
  * 中断・再開機能のサポート
  */
 
+import fs from 'fs';
+import path from 'path';
+
 export default async function handler(req, res) {
   // CORS設定
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -61,8 +64,6 @@ export default async function handler(req, res) {
 async function getJobStatus(jobId) {
   // 一時的な解決策：ファイルベースの状態管理
   try {
-    const fs = require('fs');
-    const path = require('path');
     const stateFile = path.join('/tmp', `job_${jobId}.json`);
     
     if (!fs.existsSync(stateFile)) {
