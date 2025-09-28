@@ -204,9 +204,21 @@ async function processTranscriptionAsync(jobId) {
       const audioStream = await getVimeoAudioStreamWithRetry(processingState.vimeoUrl, retryCount);
       
       // 2. 音声をチャンクに分割
+      console.log('Splitting audio into chunks...');
+      console.log('Video duration:', processingState.videoInfo.duration);
       const chunks = await splitAudioIntoChunks(audioStream, processingState.videoInfo.duration);
+      console.log('Generated chunks:', chunks.length);
+      console.log('Chunk details:', chunks.map(chunk => ({
+        id: chunk.id,
+        startTime: chunk.startTime,
+        endTime: chunk.endTime,
+        duration: chunk.duration
+      })));
+      
       processingState.chunks = chunks;
       processingState.totalChunks = chunks.length;
+      processingState.lastUpdate = new Date().toISOString();
+      saveJobState(jobId, processingState);
 
       // 3. 各チャンクを並列処理（エラー回復機能付き）
       const transcriptionResults = await processChunksInParallelWithRetry(chunks, jobId, retryCount);
