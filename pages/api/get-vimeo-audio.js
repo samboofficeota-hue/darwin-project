@@ -136,19 +136,51 @@ async function getVimeoDownloadLinks(videoId) {
 
       const videoData = await response.json();
       
-      // 動画ファイルの情報を取得
+      // 動画ファイルの情報を取得（複数のソースを確認）
       const files = videoData.files || [];
+      const downloadFiles = videoData.download || [];
+      const allFiles = [...files, ...downloadFiles];
       
-      // 音声付きのファイルを探す（MP4形式を優先）
-      const audioFile = files.find(file => 
+      console.log(`Found ${files.length} files and ${downloadFiles.length} download files`);
+      console.log('Files:', files.map(f => ({ type: f.type, quality: f.quality, size: f.size })));
+      console.log('Download files:', downloadFiles.map(f => ({ type: f.type, quality: f.quality, size: f.size })));
+      
+      // 音声付きのファイルを探す（複数の条件で試行）
+      let audioFile = allFiles.find(file => 
         file.type === 'video/mp4' && 
         file.quality === 'hls' && 
         file.size > 0
       );
 
+      // HLSが見つからない場合は、他の品質を試す
       if (!audioFile) {
+        audioFile = allFiles.find(file => 
+          file.type === 'video/mp4' && 
+          file.size > 0
+        );
+      }
+
+      // MP4が見つからない場合は、他の形式を試す
+      if (!audioFile) {
+        audioFile = allFiles.find(file => 
+          file.type && 
+          file.type.includes('video') && 
+          file.size > 0
+        );
+      }
+
+      // どのファイルも見つからない場合は、最初のファイルを使用
+      if (!audioFile && allFiles.length > 0) {
+        audioFile = allFiles[0];
+        console.log('Using first available file:', audioFile);
+      }
+
+      if (!audioFile) {
+        console.error('No files found in Vimeo response:', videoData);
         throw new Error('音声付きの動画ファイルが見つかりません');
       }
+
+      console.log('Selected audio file:', { type: audioFile.type, quality: audioFile.quality, size: audioFile.size });
 
       return {
         audioUrl: audioFile.link,
