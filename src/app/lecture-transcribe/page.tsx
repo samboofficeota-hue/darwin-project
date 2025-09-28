@@ -61,7 +61,7 @@ export default function LectureTranscribePage() {
 
     const interval = setInterval(async () => {
       try {
-        const response = await fetch(`/api/transcription-status?job_id=${job.jobId}`);
+        const response = await fetch(`https://darwin-project-574364248563.asia-northeast1.run.app/api/transcription-status?job_id=${job.jobId}`);
         
         if (!response.ok) {
           console.error('Status check failed:', response.status, response.statusText);
@@ -206,16 +206,16 @@ export default function LectureTranscribePage() {
 
     try {
       const requestData = { 
-        vimeo_url: vimeoUrl,
+        vimeoUrl: vimeoUrl,
         lecture_info: lectureInfo
       };
       
-      console.log('Sending request to /api/vimeo-transcribe:', requestData);
-      console.log('Request URL:', '/api/vimeo-transcribe');
+      console.log('Sending request to Cloud Run API:', requestData);
+      console.log('Request URL:', 'https://darwin-project-574364248563.asia-northeast1.run.app/api/vimeo-transcribe');
       console.log('Request method:', 'POST');
       console.log('Request headers:', { 'Content-Type': 'application/json' });
       
-      const response = await fetch('/api/vimeo-transcribe', {
+      const response = await fetch('https://darwin-project-574364248563.asia-northeast1.run.app/api/vimeo-transcribe', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(requestData)
