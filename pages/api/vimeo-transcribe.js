@@ -92,15 +92,21 @@ export default async function handler(req, res) {
  */
 async function startNewTranscriptionJob(vimeoUrl, lectureInfo, res) {
   try {
+    console.log('Starting new transcription job:', { vimeoUrl, lectureInfo });
+    
     // ジョブIDを生成
     const jobId = generateJobId();
+    console.log('Generated job ID:', jobId);
     
     // 講義情報から動的Phrase Hintsを生成
     const { generateDynamicPhraseHints } = require('../../lib/text-processor');
     const phraseHints = lectureInfo ? generateDynamicPhraseHints(lectureInfo) : [];
+    console.log('Generated phrase hints:', phraseHints.length);
     
     // Vimeo URLの検証
+    console.log('Validating Vimeo URL:', vimeoUrl);
     const videoInfo = await validateVimeoUrl(vimeoUrl);
+    console.log('Video info validated:', videoInfo);
     if (!videoInfo) {
       return res.status(400).json({ error: '無効なVimeo URLです' });
     }
