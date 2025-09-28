@@ -3,15 +3,16 @@
  * 実際に動作する完全な実装
  */
 
-import fs from 'fs';
-import path from 'path';
 import crypto from 'crypto';
 
-// 処理状態管理用のファイルベースストレージ
+// メモリベースの状態管理（Vercel対応）
+const jobStates = new Map();
+
+// 処理状態管理用のメモリベースストレージ
 function saveJobState(jobId, state) {
   try {
-    const stateFile = path.join('/tmp', `job_${jobId}.json`);
-    fs.writeFileSync(stateFile, JSON.stringify(state, null, 2));
+    console.log('Saving job state for:', jobId);
+    jobStates.set(jobId, state);
   } catch (error) {
     console.error('Error saving job state:', error);
   }
@@ -19,11 +20,8 @@ function saveJobState(jobId, state) {
 
 function loadJobState(jobId) {
   try {
-    const stateFile = path.join('/tmp', `job_${jobId}.json`);
-    if (fs.existsSync(stateFile)) {
-      const data = fs.readFileSync(stateFile, 'utf8');
-      return JSON.parse(data);
-    }
+    console.log('Loading job state for:', jobId);
+    return jobStates.get(jobId);
   } catch (error) {
     console.error('Error loading job state:', error);
   }

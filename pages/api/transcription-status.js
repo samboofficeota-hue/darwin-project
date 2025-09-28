@@ -58,40 +58,31 @@ export default async function handler(req, res) {
   }
 }
 
+// メモリベースの状態管理（Vercel対応）
+const jobStates = new Map();
+
 /**
- * ジョブステータスを取得（実際の実装）
+ * ジョブステータスを取得（メモリベース）
  */
 async function getJobStatus(jobId) {
   console.log('Checking job status for:', jobId);
   
   try {
-    // ファイルベースの状態管理のみを使用
-    const stateFile = path.join('/tmp', `job_${jobId}.json`);
-    console.log('Checking file:', stateFile);
-    console.log('File exists:', fs.existsSync(stateFile));
+    // メモリからジョブ状態を取得
+    const job = jobStates.get(jobId);
     
-    if (!fs.existsSync(stateFile)) {
-      console.log('Job state file not found:', stateFile);
+    if (!job) {
+      console.log('Job not found in memory:', jobId);
       return null;
     }
     
-    const jobData = fs.readFileSync(stateFile, 'utf8');
-    console.log('Job data length:', jobData.length);
-    
-    const job = JSON.parse(jobData);
-    console.log('Parsed job status:', job.status);
-    console.log('Job details:', {
+    console.log('Found job in memory:', {
       status: job.status,
       progress: job.progress,
       totalChunks: job.totalChunks,
       completedChunks: job.completedChunks,
       lastUpdate: job.lastUpdate
     });
-    
-    if (!job) {
-      console.log('Job data is null or undefined');
-      return null;
-    }
     
     // 推定完了時間を計算
     let estimatedCompletion = null;
@@ -125,6 +116,22 @@ async function getJobStatus(jobId) {
     console.error('Error reading job state:', error);
     return null;
   }
+}
+
+/**
+ * ジョブ状態を保存（メモリベース）
+ */
+export function saveJobState(jobId, state) {
+  console.log('Saving job state for:', jobId);
+  jobStates.set(jobId, state);
+}
+
+/**
+ * ジョブ状態を読み込み（メモリベース）
+ */
+export function loadJobState(jobId) {
+  console.log('Loading job state for:', jobId);
+  return jobStates.get(jobId);
 }
 
 /**
