@@ -45,37 +45,55 @@ export default async function handler(req, res) {
 }
 
 /**
- * 講義録を取得（プレースホルダー）
+ * 講義録を取得（実際の実装）
  */
 async function getLectureRecord(jobId) {
-  // 実際の実装では、データベースから取得
-  // ここではサンプルデータを返す
-  
-  // サンプルデータ
-  const sampleRecord = {
-    jobId: jobId,
-    title: '公益資本主義について',
-    duration: '3600', // 1時間
-    confidence: 0.92,
-    fullText: '公益資本主義は、経済社会システムをアップデートするための新しいアプローチです。従来の資本主義の課題を解決し、より持続可能で公平な社会を構築することを目指しています。',
-    chunks: [
-      {
-        chunkId: 'chunk_0',
-        startTime: 0,
-        endTime: 300,
-        text: '公益資本主義は、経済社会システムをアップデートするための新しいアプローチです。',
-        confidence: 0.95
-      },
-      {
-        chunkId: 'chunk_1',
-        startTime: 300,
-        endTime: 600,
-        text: '従来の資本主義の課題を解決し、より持続可能で公平な社会を構築することを目指しています。',
-        confidence: 0.89
-      }
-    ],
-    createdAt: new Date().toISOString()
-  };
-
-  return sampleRecord;
+  try {
+    const fs = require('fs');
+    const path = require('path');
+    
+    // 1. 処理状態ファイルから結果を取得
+    const stateFile = path.join('/tmp', `job_${jobId}.json`);
+    
+    if (!fs.existsSync(stateFile)) {
+      return null;
+    }
+    
+    const jobData = fs.readFileSync(stateFile, 'utf8');
+    const job = JSON.parse(jobData);
+    
+    // 2. 処理が完了していない場合はnullを返す
+    if (job.status !== 'completed' || !job.result) {
+      return null;
+    }
+    
+    // 3. 講義録データを構築
+    const lectureRecord = {
+      jobId: jobId,
+      title: job.lectureInfo?.theme || '講義録',
+      duration: job.result.duration?.toString() || '0',
+      confidence: job.result.averageConfidence || 0,
+      fullText: job.result.fullText || '',
+      chunks: job.result.chunks?.map((chunk, index) => ({
+        chunkId: `chunk_${index}`,
+        startTime: chunk.startTime || 0,
+        endTime: chunk.endTime || 0,
+        text: chunk.text || '',
+        confidence: chunk.confidence || 0
+      })) || [],
+      createdAt: job.startTime || new Date().toISOString(),
+      statistics: job.result.statistics || {},
+      processed: job.result.processed || false
+    };
+    
+    // 4. 講義録を永続化（別ファイルに保存）
+    const recordFile = path.join('/tmp', `record_${jobId}.json`);
+    fs.writeFileSync(recordFile, JSON.stringify(lectureRecord, null, 2));
+    
+    return lectureRecord;
+    
+  } catch (error) {
+    console.error('Error getting lecture record:', error);
+    return null;
+  }
 }

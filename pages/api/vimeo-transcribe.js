@@ -212,9 +212,12 @@ async function processTranscriptionAsync(jobId) {
       processingState.status = 'completed';
       processingState.progress = 100;
       processingState.result = finalResult;
-      saveJobState(jobId, processingState);
       processingState.lastUpdate = new Date().toISOString();
       processingState.retryCount = 0; // 成功時はリトライカウントをリセット
+      saveJobState(jobId, processingState);
+      
+      // 6. 講義録を永続化保存
+      await saveLectureRecord(jobId, processingState, finalResult);
       break;
 
     } catch (error) {
@@ -577,6 +580,42 @@ function mergeTranscriptionResults(results) {
     statistics: processedData.statistics,
     processed: true
   };
+}
+
+/**
+ * 講義録を永続化保存
+ */
+async function saveLectureRecord(jobId, processingState, finalResult) {
+  try {
+    const lectureRecord = {
+      jobId: jobId,
+      title: processingState.lectureInfo?.theme || '講義録',
+      duration: finalResult.duration?.toString() || '0',
+      confidence: finalResult.averageConfidence || 0,
+      fullText: finalResult.fullText || '',
+      chunks: finalResult.chunks?.map((chunk, index) => ({
+        chunkId: `chunk_${index}`,
+        startTime: chunk.startTime || 0,
+        endTime: chunk.endTime || 0,
+        text: chunk.text || '',
+        confidence: chunk.confidence || 0
+      })) || [],
+      createdAt: processingState.startTime || new Date().toISOString(),
+      statistics: finalResult.statistics || {},
+      processed: finalResult.processed || false,
+      lectureInfo: processingState.lectureInfo || {},
+      videoInfo: processingState.videoInfo || {}
+    };
+    
+    // 講義録を別ファイルに保存
+    const recordFile = path.join('/tmp', `record_${jobId}.json`);
+    fs.writeFileSync(recordFile, JSON.stringify(lectureRecord, null, 2));
+    
+    console.log(`Lecture record saved: ${recordFile}`);
+    
+  } catch (error) {
+    console.error('Error saving lecture record:', error);
+  }
 }
 
 /**
