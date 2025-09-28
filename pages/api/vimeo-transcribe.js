@@ -116,6 +116,8 @@ async function startNewTranscriptionJob(vimeoUrl, lectureInfo, res) {
       jobId,
       vimeoUrl,
       videoInfo,
+      lectureInfo,
+      phraseHints,
       status: 'initializing',
       progress: 0,
       chunks: [],
@@ -127,7 +129,16 @@ async function startNewTranscriptionJob(vimeoUrl, lectureInfo, res) {
       result: null
     };
 
+    console.log('Created processing state:', {
+      jobId: processingState.jobId,
+      vimeoUrl: processingState.vimeoUrl,
+      videoInfo: processingState.videoInfo,
+      lectureInfo: processingState.lectureInfo,
+      phraseHintsCount: processingState.phraseHints?.length || 0
+    });
+
     saveJobState(jobId, processingState);
+    console.log('Processing state saved to file');
 
     // 非同期で処理を開始
     processTranscriptionAsync(jobId);
@@ -201,8 +212,22 @@ async function processTranscriptionAsync(jobId) {
   console.log('Loaded processing state:', {
     status: processingState.status,
     vimeoUrl: processingState.vimeoUrl,
-    videoInfo: processingState.videoInfo
+    videoInfo: processingState.videoInfo,
+    lectureInfo: processingState.lectureInfo,
+    phraseHintsCount: processingState.phraseHints?.length || 0
   });
+  
+  // Vimeo情報の詳細確認
+  if (processingState.videoInfo) {
+    console.log('Video info details:', {
+      videoId: processingState.videoInfo.videoId,
+      title: processingState.videoInfo.title,
+      duration: processingState.videoInfo.duration,
+      description: processingState.videoInfo.description
+    });
+  } else {
+    console.error('Video info is missing from processing state!');
+  }
   
   const maxRetries = 3;
   let retryCount = 0;
