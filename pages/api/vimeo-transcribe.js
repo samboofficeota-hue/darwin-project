@@ -4,7 +4,7 @@
  */
 
 import crypto from 'crypto';
-import { saveJobState, loadJobState, updateJobState } from '../../lib/storage';
+import { saveJobState, loadJobState, updateJobState } from '../../lib/storage.js';
 
 export const config = {
   api: {

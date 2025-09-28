@@ -4,7 +4,7 @@
  * Redis永続化対応版
  */
 
-import { loadJobState } from '../../lib/storage';
+import { loadJobState } from '../../lib/storage.js';
 
 export default async function handler(req, res) {
   // CORS設定
