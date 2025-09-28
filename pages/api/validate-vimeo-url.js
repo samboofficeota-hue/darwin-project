@@ -138,16 +138,16 @@ async function validateAndGetVideoInfo(url) {
       throw new Error('動画が長すぎます（最大4時間）');
     }
 
-    // 動画の音声をチェック（一時的に無効化）
+    // 動画の音声をチェック
     console.log('Video data has_audio:', videoData.has_audio);
     console.log('Video data files:', videoData.files);
     
-    // 一時的に音声チェックを無効化
-    // const hasAudio = videoData.has_audio === true;
-    // if (!hasAudio) {
-    //   console.log('Audio check failed, has_audio:', videoData.has_audio);
-    //   throw new Error('この動画には音声が含まれていません。音声付きの動画を選択してください。');
-    // }
+    const hasAudio = videoData.has_audio === true;
+
+    if (!hasAudio) {
+      console.log('Audio check failed, has_audio:', videoData.has_audio);
+      throw new Error('この動画には音声が含まれていません。音声付きの動画を選択してください。');
+    }
     
     return {
       videoId,
