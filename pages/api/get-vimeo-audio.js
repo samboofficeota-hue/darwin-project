@@ -43,20 +43,27 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: '無効なVimeo URLです' });
     }
 
+    console.log(`Getting audio for video ID: ${videoId}, start: ${startTime}s, duration: ${duration}s`);
+
     // Vimeo APIから動画のダウンロードリンクを取得
     const downloadInfo = await getVimeoDownloadLinks(videoId);
     if (!downloadInfo) {
       return res.status(400).json({ error: '動画のダウンロードリンクを取得できませんでした' });
     }
 
+    console.log(`Download info: ${downloadInfo.audioUrl}, format: ${downloadInfo.format}`);
+
     // 音声ファイルをダウンロード
     const audioBuffer = await downloadVimeoAudio(downloadInfo.audioUrl);
+    console.log(`Downloaded audio buffer: ${audioBuffer.length} bytes`);
     
     // 指定された時間範囲の音声を抽出
     const extractedAudio = await extractAudioSegment(audioBuffer, startTime, duration);
+    console.log(`Extracted audio segment: ${extractedAudio.length} bytes`);
 
     // 音声データをBase64エンコードして返す
     const base64Audio = extractedAudio.toString('base64');
+    console.log(`Base64 encoded: ${base64Audio.length} characters`);
 
     res.status(200).json({
       success: true,
@@ -157,21 +164,29 @@ async function downloadVimeoAudio(audioUrl) {
 
 /**
  * 音声の指定された時間範囲を抽出
- * 注意: 実際の実装では、FFmpegなどの音声処理ライブラリが必要
+ * 簡易実装: 実際のプロダクションではFFmpegを使用
  */
 async function extractAudioSegment(audioBuffer, startTime, duration) {
   try {
-    // 簡易実装: 実際の実装ではFFmpegを使用
-    // ここでは元のバッファをそのまま返す
-    // 実際のプロダクションでは、FFmpegで音声を切り出し
+    // 簡易実装: 音声の先頭部分を返す
+    // 実際のプロダクションでは、FFmpegで正確な時間範囲を切り出し
     
-    const startByte = Math.floor((startTime / 300) * audioBuffer.length); // 5分を300秒と仮定
-    const endByte = Math.floor(((startTime + duration) / 300) * audioBuffer.length);
+    // 音声の長さを推定（MP4の場合、おおよその計算）
+    const estimatedDuration = 300; // 5分と仮定
+    const bytesPerSecond = audioBuffer.length / estimatedDuration;
     
-    return audioBuffer.slice(startByte, endByte);
+    const startByte = Math.floor(startTime * bytesPerSecond);
+    const endByte = Math.floor((startTime + duration) * bytesPerSecond);
+    
+    // 範囲をバッファのサイズ内に制限
+    const safeStartByte = Math.max(0, Math.min(startByte, audioBuffer.length));
+    const safeEndByte = Math.max(safeStartByte, Math.min(endByte, audioBuffer.length));
+    
+    return audioBuffer.slice(safeStartByte, safeEndByte);
 
   } catch (error) {
     console.error('Error extracting audio segment:', error);
-    throw error;
+    // エラーの場合は元のバッファを返す
+    return audioBuffer;
   }
 }

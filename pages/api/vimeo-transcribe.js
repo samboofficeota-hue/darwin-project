@@ -354,8 +354,16 @@ async function processChunksSequentially(chunks, jobId) {
  */
 async function processAudioChunk(chunk, vimeoUrl) {
   try {
+    console.log(`Processing chunk ${chunk.id}: ${chunk.startTime}s - ${chunk.endTime}s`);
+    
     // 1. Vimeoから音声データを取得
-    const audioResponse = await fetch('/api/get-vimeo-audio', {
+    const baseUrl = process.env.VERCEL_URL 
+      ? `https://${process.env.VERCEL_URL}` 
+      : 'http://localhost:3000';
+    
+    console.log(`Fetching audio from: ${baseUrl}/api/get-vimeo-audio`);
+    
+    const audioResponse = await fetch(`${baseUrl}/api/get-vimeo-audio`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -368,13 +376,18 @@ async function processAudioChunk(chunk, vimeoUrl) {
     });
 
     if (!audioResponse.ok) {
-      throw new Error('音声データの取得に失敗しました');
+      const errorText = await audioResponse.text();
+      console.error('Audio fetch failed:', errorText);
+      throw new Error(`音声データの取得に失敗しました: ${audioResponse.status}`);
     }
 
     const audioData = await audioResponse.json();
+    console.log(`Audio data received: ${audioData.audioData ? audioData.audioData.length : 0} characters`);
     
     // 2. Speech-to-Text APIで文字起こし
-    const transcriptionResponse = await fetch('/api/transcribe', {
+    console.log(`Sending to transcription API: ${baseUrl}/api/transcribe`);
+    
+    const transcriptionResponse = await fetch(`${baseUrl}/api/transcribe`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -388,10 +401,13 @@ async function processAudioChunk(chunk, vimeoUrl) {
     });
 
     if (!transcriptionResponse.ok) {
-      throw new Error('文字起こしに失敗しました');
+      const errorText = await transcriptionResponse.text();
+      console.error('Transcription failed:', errorText);
+      throw new Error(`文字起こしに失敗しました: ${transcriptionResponse.status}`);
     }
 
     const transcriptionResult = await transcriptionResponse.json();
+    console.log(`Transcription result: ${transcriptionResult.transcript ? transcriptionResult.transcript.length : 0} characters`);
     
     return {
       chunkId: chunk.id,
