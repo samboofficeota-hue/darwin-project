@@ -26,7 +26,22 @@ export default async function handler(req, res) {
     }
 
     // Vimeo URLの検証と動画情報取得
-    const videoInfo = await validateAndGetVideoInfo(url);
+    let videoInfo;
+    
+    // 一時的にモック機能を追加（Vimeo APIトークンなしでも動作）
+    if (!process.env.VIMEO_ACCESS_TOKEN || process.env.VIMEO_ACCESS_TOKEN === 'your_vimeo_token') {
+      console.log('Vimeo APIトークンが設定されていないため、モックデータを使用します');
+      videoInfo = {
+        videoId: 'mock_video_id',
+        title: 'モック動画タイトル',
+        duration: 300, // 5分
+        description: 'これはテスト用のモック動画です',
+        thumbnail: 'https://via.placeholder.com/640x360/000000/FFFFFF?text=Mock+Video',
+        embed: '<iframe src="https://player.vimeo.com/video/mock" width="640" height="360" frameborder="0" allow="autoplay; fullscreen" allowfullscreen></iframe>'
+      };
+    } else {
+      videoInfo = await validateAndGetVideoInfo(url);
+    }
 
     if (!videoInfo) {
       return res.status(400).json({ 
