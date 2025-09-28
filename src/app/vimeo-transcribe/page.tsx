@@ -24,7 +24,7 @@ export default function VimeoTranscribePage() {
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 10000); // 10秒タイムアウト
         
-        const response = await fetch(`/api/transcription-status?job_id=${jobId}`, {
+        const response = await fetch(`https://darwin-project-574364248563.asia-northeast1.run.app/api/transcription-status?job_id=${jobId}`, {
           signal: controller.signal
         });
         
@@ -83,13 +83,13 @@ export default function VimeoTranscribePage() {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒タイムアウト
       
-      const response = await fetch('/api/vimeo-transcribe', {
+      const response = await fetch('https://darwin-project-574364248563.asia-northeast1.run.app/api/vimeo-transcribe', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
-          vimeo_url: vimeoUrl,
+          vimeoUrl: vimeoUrl,
           lecture_info: {
             theme: '講義録',
             speaker: {
@@ -130,7 +130,7 @@ export default function VimeoTranscribePage() {
     setError(null);
 
     try {
-      const response = await fetch('/api/vimeo-transcribe', {
+      const response = await fetch('https://darwin-project-574364248563.asia-northeast1.run.app/api/vimeo-transcribe', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
