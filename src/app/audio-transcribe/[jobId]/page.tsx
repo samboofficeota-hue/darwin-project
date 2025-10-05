@@ -25,7 +25,7 @@ interface JobStatus {
 export default function AudioTranscriptionResultPage() {
   const params = useParams();
   const router = useRouter();
-  const jobId = params.jobId as string;
+  const jobId = params?.jobId as string;
   
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [loading, setLoading] = useState(true);
