@@ -86,7 +86,7 @@ export default function ChunkedTranscribePage() {
 
     try {
       // 進捗コールバック関数
-      const onProgress = (progressInfo) => {
+      const onProgress = (progressInfo: { current: number; total: number; percentage: number }) => {
         console.log(`Progress: ${progressInfo.current}/${progressInfo.total} (${progressInfo.percentage}%)`);
         setProgress(progressInfo.percentage);
       };
@@ -173,9 +173,9 @@ export default function ChunkedTranscribePage() {
     } catch (error) {
       console.error('Error uploading chunks:', error);
       console.error('Error details:', {
-        name: error.name,
-        message: error.message,
-        stack: error.stack
+        name: error instanceof Error ? error.name : 'Unknown',
+        message: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
       });
       setError(error instanceof Error ? error.message : 'チャンクのアップロードに失敗しました');
       setIsProcessing(false);
