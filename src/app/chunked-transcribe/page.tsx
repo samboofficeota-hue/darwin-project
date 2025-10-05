@@ -156,13 +156,26 @@ export default function ChunkedTranscribePage() {
         status: 'uploading'
       };
       
-      console.log('Saving session info...');
+      console.log('Saving session info...', { userId, sessionId, sessionData });
       await saveSessionInfo(userId, sessionId, sessionData);
       console.log('Session info saved successfully');
       
       // チャンクをCloud Storageにアップロード
-      console.log('Starting Cloud Storage upload...');
-      const results = await uploadChunksToCloudStorage(chunks, userId, sessionId);
+      console.log('Starting Cloud Storage upload...', { 
+        chunksCount: chunks.length, 
+        userId, 
+        sessionId 
+      });
+      
+      // アップロード進捗コールバック
+      const onUploadProgress = (progressInfo: { current: number; total: number; percentage: number }) => {
+        console.log(`Upload Progress: ${progressInfo.current}/${progressInfo.total} (${progressInfo.percentage}%)`);
+        setProgress(50 + (progressInfo.percentage * 0.25)); // 50-75%の範囲で進捗を更新
+      };
+      
+      const results = await uploadChunksToCloudStorage(chunks, userId, sessionId, onUploadProgress);
+      
+      console.log('Upload results:', results);
       
       setUploadResults(results);
       setCurrentStep('transcribe');
@@ -177,7 +190,22 @@ export default function ChunkedTranscribePage() {
         message: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : undefined
       });
-      setError(error instanceof Error ? error.message : 'チャンクのアップロードに失敗しました');
+      
+      // より詳細なエラーメッセージを表示
+      let errorMessage = 'チャンクのアップロードに失敗しました';
+      if (error instanceof Error) {
+        if (error.message.includes('ENAMETOOLONG')) {
+          errorMessage = 'Cloud Storage認証エラー: 環境変数の設定を確認してください';
+        } else if (error.message.includes('bucket')) {
+          errorMessage = 'Cloud Storageバケットエラー: バケットが存在しないか、アクセス権限がありません';
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+          errorMessage = 'ネットワークエラー: インターネット接続を確認してください';
+        } else {
+          errorMessage = `アップロードエラー: ${error.message}`;
+        }
+      }
+      
+      setError(errorMessage);
       setIsProcessing(false);
     }
   };
