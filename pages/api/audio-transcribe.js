@@ -276,35 +276,143 @@ async function getAudioMetadata(audioPath) {
 }
 
 /**
- * 音声をチャンクに分割（MP3専用最適化版）
+ * 音声をチャンクに分割（無音部分検出 + 時間ベース分割のハイブリッド）
  */
 async function splitAudioIntoChunks(audioPath, duration) {
   const safeDuration = duration || 300; // デフォルト5分
   
+  try {
+    // まず無音部分での分割を試行
+    const silenceChunks = await detectSilenceAndSplit(audioPath, safeDuration);
+    if (silenceChunks && silenceChunks.length > 0) {
+      console.log(`Split audio using silence detection: ${silenceChunks.length} chunks`);
+      return silenceChunks;
+    }
+  } catch (error) {
+    console.warn('Silence detection failed, falling back to time-based splitting:', error.message);
+  }
+  
+  // フォールバック：時間ベースの分割
+  return await splitAudioByTime(audioPath, safeDuration);
+}
+
+/**
+ * 無音部分を検出して音声を分割
+ */
+async function detectSilenceAndSplit(audioPath, duration) {
+  try {
+    // 無音部分を検出（-50dB以下、0.5秒以上）
+    const silenceCommand = `ffmpeg -i "${audioPath}" -af silencedetect=noise=-50dB:duration=0.5 -f null - 2>&1 | grep "silence_start"`;
+    const silenceOutput = await execAsync(silenceCommand);
+    
+    if (!silenceOutput || silenceOutput.trim() === '') {
+      console.log('No silence detected, using time-based splitting');
+      return null;
+    }
+    
+    // 無音開始時間を抽出
+    const silenceStarts = silenceOutput
+      .split('\n')
+      .filter(line => line.includes('silence_start'))
+      .map(line => {
+        const match = line.match(/silence_start: ([\d.]+)/);
+        return match ? parseFloat(match[1]) : null;
+      })
+      .filter(time => time !== null && time > 0);
+    
+    if (silenceStarts.length === 0) {
+      return null;
+    }
+    
+    // 無音部分を基準にチャンクを作成
+    const chunks = [];
+    let lastStart = 0;
+    
+    for (let i = 0; i < silenceStarts.length; i++) {
+      const silenceStart = silenceStarts[i];
+      const chunkDuration = silenceStart - lastStart;
+      
+      // 最小チャンクサイズ（30秒）を確保
+      if (chunkDuration >= 30) {
+        const chunkPath = path.join('/tmp', `silence_chunk_${i}_${Date.now()}.mp3`);
+        chunks.push({
+          id: `silence_chunk_${i}`,
+          startTime: lastStart,
+          endTime: silenceStart,
+          duration: chunkDuration,
+          chunkPath,
+          status: 'pending',
+          result: null,
+          error: null,
+          retryCount: 0,
+          maxRetries: 3,
+          splitMethod: 'silence'
+        });
+        lastStart = silenceStart;
+      }
+    }
+    
+    // 最後のチャンクを追加
+    if (lastStart < duration) {
+      const finalDuration = duration - lastStart;
+      if (finalDuration >= 30) {
+        const chunkPath = path.join('/tmp', `silence_chunk_final_${Date.now()}.mp3`);
+        chunks.push({
+          id: `silence_chunk_final`,
+          startTime: lastStart,
+          endTime: duration,
+          duration: finalDuration,
+          chunkPath,
+          status: 'pending',
+          result: null,
+          error: null,
+          retryCount: 0,
+          maxRetries: 3,
+          splitMethod: 'silence'
+        });
+      }
+    }
+    
+    if (chunks.length > 0) {
+      await createChunkFiles(audioPath, chunks);
+      return chunks;
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Silence detection error:', error);
+    return null;
+  }
+}
+
+/**
+ * 時間ベースで音声を分割（フォールバック）
+ */
+async function splitAudioByTime(audioPath, duration) {
   // チャンクサイズを動的に調整
   let chunkDuration;
-  if (safeDuration <= 600) { // 10分以下
+  if (duration <= 600) { // 10分以下
     chunkDuration = 120; // 2分チャンク
-  } else if (safeDuration <= 1800) { // 30分以下
+  } else if (duration <= 1800) { // 30分以下
     chunkDuration = 300; // 5分チャンク
   } else { // 30分以上
     chunkDuration = 600; // 10分チャンク
   }
   
-  const totalChunks = Math.ceil(safeDuration / chunkDuration);
+  const totalChunks = Math.ceil(duration / chunkDuration);
   const chunks = [];
 
-  console.log(`Splitting ${safeDuration}s audio into ${totalChunks} chunks of ${chunkDuration}s each`);
+  console.log(`Splitting ${duration}s audio into ${totalChunks} chunks of ${chunkDuration}s each (time-based)`);
 
   for (let i = 0; i < totalChunks; i++) {
     const startTime = i * chunkDuration;
-    const endTime = Math.min((i + 1) * chunkDuration, safeDuration);
+    const endTime = Math.min((i + 1) * chunkDuration, duration);
     const actualDuration = endTime - startTime;
     
-    const chunkPath = path.join('/tmp', `chunk_${i}_${Date.now()}.mp3`);
+    const chunkPath = path.join('/tmp', `time_chunk_${i}_${Date.now()}.mp3`);
     
     chunks.push({
-      id: `chunk_${i}`,
+      id: `time_chunk_${i}`,
       startTime,
       endTime,
       duration: actualDuration,
@@ -313,7 +421,8 @@ async function splitAudioIntoChunks(audioPath, duration) {
       result: null,
       error: null,
       retryCount: 0,
-      maxRetries: 3
+      maxRetries: 3,
+      splitMethod: 'time'
     });
   }
 
@@ -329,9 +438,13 @@ async function splitAudioIntoChunks(audioPath, duration) {
 async function createChunkFiles(audioPath, chunks) {
   const createPromises = chunks.map(async (chunk) => {
     try {
-      const command = `ffmpeg -i "${audioPath}" -ss ${chunk.startTime} -t ${chunk.duration} -c copy "${chunk.chunkPath}" -y`;
+      // 音声品質を最適化してチャンクを作成
+      // -ar 16000: サンプリングレートを16kHzに設定
+      // -ac 1: モノラルに変換
+      // -b:a 64k: ビットレートを64kbpsに設定（処理速度向上）
+      const command = `ffmpeg -i "${audioPath}" -ss ${chunk.startTime} -t ${chunk.duration} -ar 16000 -ac 1 -b:a 64k "${chunk.chunkPath}" -y`;
       await execAsync(command);
-      console.log(`Created chunk file: ${chunk.chunkPath}`);
+      console.log(`Created optimized chunk file: ${chunk.chunkPath}`);
     } catch (error) {
       console.error(`Error creating chunk ${chunk.id}:`, error);
       throw error;
@@ -434,7 +547,7 @@ async function transcribeAudioChunk(chunk) {
 
     const config = {
       encoding: 'MP3',
-      sampleRateHertz: 44100,
+      sampleRateHertz: 16000, // Google推奨の16kHzに変更
       languageCode: 'ja-JP',
       alternativeLanguageCodes: ['en-US'],
       enableAutomaticPunctuation: true,
@@ -442,6 +555,9 @@ async function transcribeAudioChunk(chunk) {
       enableWordConfidence: true,
       model: 'latest_long',
       useEnhanced: true,
+      // 音声品質の最適化
+      audioChannelCount: 1, // モノラルに設定（処理速度向上）
+      enableSeparateRecognitionPerChannel: false,
     };
 
     // 文字起こしの実行
@@ -487,7 +603,25 @@ async function transcribeAudioChunk(chunk) {
       status: error.status,
       details: error.details
     });
-    throw new Error(`チャンク ${chunk.id} の文字起こしに失敗しました: ${error.message}`);
+    
+    // エラーの種類に応じた詳細な情報を提供
+    let errorMessage = `チャンク ${chunk.id} の文字起こしに失敗しました: ${error.message}`;
+    
+    if (error.code === 3) {
+      errorMessage += ' (INVALID_ARGUMENT: 音声データが無効です)';
+    } else if (error.code === 4) {
+      errorMessage += ' (DEADLINE_EXCEEDED: 処理時間がタイムアウトしました)';
+    } else if (error.code === 5) {
+      errorMessage += ' (NOT_FOUND: 音声ファイルが見つかりません)';
+    } else if (error.code === 7) {
+      errorMessage += ' (PERMISSION_DENIED: 認証エラーです)';
+    } else if (error.code === 8) {
+      errorMessage += ' (RESOURCE_EXHAUSTED: APIクォータを超過しました)';
+    } else if (error.code === 13) {
+      errorMessage += ' (INTERNAL: サーバー内部エラーです)';
+    }
+    
+    throw new Error(errorMessage);
   }
 }
 
