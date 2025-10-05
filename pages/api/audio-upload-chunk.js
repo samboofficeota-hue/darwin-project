@@ -108,7 +108,7 @@ async function reconstructFile(uploadSession) {
     const tempFilePath = path.join(tempDir, `reconstructed_${uploadSession.uploadId}_${fileName}`);
     
     // チャンクを順序通りに結合
-    const fileBuffer = Buffer.alloc(0);
+    let fileBuffer = Buffer.alloc(0);
     for (let i = 0; i < totalChunks; i++) {
       const chunkKey = `chunk_${i}`;
       const chunkData = chunks[chunkKey];

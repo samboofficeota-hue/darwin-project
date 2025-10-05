@@ -1,19 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'standalone',
   // 大きなファイルのアップロード対応
   experimental: {
     serverComponentsExternalPackages: ['@google-cloud/speech'],
-  },
-  // APIルートの設定
-  api: {
-    bodyParser: {
-      sizeLimit: '50mb',
-    },
-  },
-  // CloudRun用の設定
-  serverRuntimeConfig: {
-    maxFileSize: '50mb',
   },
   // 静的ファイルの配信設定
   async headers() {

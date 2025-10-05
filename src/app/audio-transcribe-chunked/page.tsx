@@ -96,7 +96,7 @@ export default function AudioTranscribeChunkedPage() {
   };
 
   // ファイルをBase64に変換
-  const fileToBase64 = (file: File): Promise<string> => {
+  const fileToBase64 = (file: File | Blob): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
