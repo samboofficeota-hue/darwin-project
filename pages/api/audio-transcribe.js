@@ -16,7 +16,7 @@ const execAsync = promisify(exec);
 // Google Cloud Speech-to-Text クライアントの初期化
 const speechClient = new SpeechClient({
   projectId: process.env.GOOGLE_CLOUD_PROJECT_ID || 'whgc-project',
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+  // CloudRunではサービスアカウントを自動的に使用
 });
 
 export const config = {
@@ -480,6 +480,13 @@ async function transcribeAudioChunk(chunk) {
 
   } catch (error) {
     console.error(`Chunk ${chunk.id} transcription error:`, error);
+    console.error('Error details:', {
+      name: error.name,
+      message: error.message,
+      code: error.code,
+      status: error.status,
+      details: error.details
+    });
     throw new Error(`チャンク ${chunk.id} の文字起こしに失敗しました: ${error.message}`);
   }
 }
