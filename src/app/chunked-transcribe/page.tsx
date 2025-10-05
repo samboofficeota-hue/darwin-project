@@ -144,6 +144,13 @@ export default function ChunkedTranscribePage() {
     setCurrentStep('upload');
     setProgress(50);
 
+    // タイムアウト設定（5分）
+    const uploadTimeout = setTimeout(() => {
+      console.error('Upload timeout after 5 minutes');
+      setError('アップロードがタイムアウトしました。ファイルサイズが大きすぎる可能性があります。');
+      setIsProcessing(false);
+    }, 5 * 60 * 1000);
+
     try {
       // セッション情報を保存
       const sessionData = {
@@ -183,7 +190,12 @@ export default function ChunkedTranscribePage() {
       
       console.log(`Successfully uploaded ${results.length} chunks`);
       
+      // タイムアウトをクリア
+      clearTimeout(uploadTimeout);
+      
     } catch (error) {
+      // タイムアウトをクリア
+      clearTimeout(uploadTimeout);
       console.error('Error uploading chunks:', error);
       console.error('Error details:', {
         name: error instanceof Error ? error.name : 'Unknown',
