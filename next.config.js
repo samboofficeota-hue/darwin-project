@@ -5,6 +5,12 @@ const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ['@google-cloud/speech'],
   },
+  // APIルートの設定
+  api: {
+    bodyParser: {
+      sizeLimit: '50mb',
+    },
+  },
   // CloudRun用の設定
   serverRuntimeConfig: {
     maxFileSize: '50mb',

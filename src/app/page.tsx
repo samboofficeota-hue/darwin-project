@@ -114,6 +114,12 @@ export default function Home() {
                        🎵 音声文字起こし
                      </a>
                      <a
+                       href="/audio-transcribe-chunked"
+                       className="inline-block bg-red-600 text-white py-2 px-6 rounded-lg font-semibold hover:bg-red-700 transition-colors"
+                     >
+                       📁 大容量ファイル対応
+                     </a>
+                     <a
                        href="/vimeo-transcribe"
                        className="inline-block bg-green-600 text-white py-2 px-6 rounded-lg font-semibold hover:bg-green-700 transition-colors"
                      >
