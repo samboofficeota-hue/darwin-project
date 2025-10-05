@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // CloudRun用のstandalone出力を有効化
+  output: 'standalone',
   // 大きなファイルのアップロード対応
   experimental: {
     serverComponentsExternalPackages: ['@google-cloud/speech'],
