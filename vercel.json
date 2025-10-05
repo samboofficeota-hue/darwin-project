@@ -5,6 +5,14 @@
     "pages/api/**/*.js": {
       "maxDuration": 300,
       "memory": 1024
+    },
+    "pages/api/audio-upload-chunk.js": {
+      "maxDuration": 300,
+      "memory": 1024
+    },
+    "pages/api/audio-transcribe.js": {
+      "maxDuration": 300,
+      "memory": 1024
     }
   },
   "env": {

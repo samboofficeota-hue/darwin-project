@@ -34,14 +34,14 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { audioFile, testMode = 'chunking' } = req.body;
+    const { audioData, testMode = 'chunking' } = req.body;
 
-    if (!audioFile) {
-      return res.status(400).json({ error: '音声ファイルが必要です' });
+    if (!audioData) {
+      return res.status(400).json({ error: '音声データが必要です' });
     }
 
     // Base64デコードして一時ファイルに保存
-    const audioBuffer = Buffer.from(audioFile.split(',')[1], 'base64');
+    const audioBuffer = Buffer.from(audioData, 'base64');
     const tempAudioPath = path.join('/tmp', `test_audio_${Date.now()}.mp3`);
     fs.writeFileSync(tempAudioPath, audioBuffer);
 

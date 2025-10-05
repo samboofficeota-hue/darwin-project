@@ -100,7 +100,12 @@ export default function AudioTranscribeChunkedPage() {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result as string);
+      reader.onload = () => {
+        const result = reader.result as string;
+        // data:audio/mpeg;base64, プレフィックスを削除して純粋なBase64文字列を返す
+        const base64String = result.split(',')[1];
+        resolve(base64String);
+      };
       reader.onerror = error => reject(error);
     });
   };

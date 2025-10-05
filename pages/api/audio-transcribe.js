@@ -25,6 +25,8 @@ export const config = {
       sizeLimit: '50mb', // MP3ファイル用にサイズ制限を設定
     },
   },
+  // Vercel関数の設定
+  maxDuration: 300, // 5分
 };
 
 export default async function handler(req, res) {
@@ -43,10 +45,33 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { audioFile, resume_job_id, audioInfo } = req.body;
+    const { audioData, resume_job_id, audioInfo } = req.body;
 
-    if (!audioFile && !resume_job_id) {
-      return res.status(400).json({ error: '音声ファイルまたは再開ジョブIDが必要です' });
+    console.log('Request received:', {
+      hasAudioData: !!audioData,
+      audioDataType: typeof audioData,
+      audioDataLength: audioData?.length || 0,
+      hasResumeJobId: !!resume_job_id,
+      hasAudioInfo: !!audioInfo
+    });
+
+    if (!audioData && !resume_job_id) {
+      return res.status(400).json({ error: '音声データまたは再開ジョブIDが必要です' });
+    }
+
+    // Base64データの基本的な検証
+    if (audioData && typeof audioData === 'string') {
+      try {
+        // Base64デコードテスト
+        Buffer.from(audioData, 'base64');
+        console.log('Base64 validation passed');
+      } catch (decodeError) {
+        console.error('Base64 decode error:', decodeError);
+        return res.status(400).json({ 
+          error: '無効なBase64データです',
+          details: decodeError.message
+        });
+      }
     }
 
     // 既存のジョブを再開する場合
@@ -55,13 +80,27 @@ export default async function handler(req, res) {
     }
 
     // 新しいジョブを開始
-    return await startNewTranscriptionJob(audioFile, audioInfo, res);
+    return await startNewTranscriptionJob(audioData, audioInfo, res);
 
   } catch (error) {
     console.error('Audio transcription error:', error);
+    console.error('Error stack:', error.stack);
+    
+    // 環境変数の確認
+    console.log('Environment check:');
+    console.log('- VERCEL:', process.env.VERCEL);
+    console.log('- KV_REST_API_URL:', process.env.KV_REST_API_URL ? 'Set' : 'Not set');
+    console.log('- KV_REST_API_TOKEN:', process.env.KV_REST_API_TOKEN ? 'Set' : 'Not set');
+    console.log('- GOOGLE_APPLICATION_CREDENTIALS:', process.env.GOOGLE_APPLICATION_CREDENTIALS ? 'Set' : 'Not set');
+    
     res.status(500).json({
       error: '文字起こしエラーが発生しました',
-      details: error.message
+      details: error.message,
+      environment: {
+        isVercel: !!process.env.VERCEL,
+        hasRedis: !!(process.env.KV_REST_API_URL && process.env.KV_REST_API_TOKEN),
+        hasGoogleCredentials: !!process.env.GOOGLE_APPLICATION_CREDENTIALS
+      }
     });
   }
 }
@@ -69,20 +108,39 @@ export default async function handler(req, res) {
 /**
  * 新しい文字起こしジョブを開始
  */
-async function startNewTranscriptionJob(audioFile, audioInfo, res) {
+async function startNewTranscriptionJob(audioData, audioInfo, res) {
   try {
     // ジョブIDを生成
     const jobId = generateJobId();
     
-    // 音声ファイルの検証
-    if (!audioFile || !audioFile.startsWith('data:audio/mp3;base64,')) {
-      return res.status(400).json({ error: 'MP3形式の音声ファイルが必要です' });
+    console.log(`Starting new transcription job: ${jobId}`);
+    console.log('Audio data info:', {
+      type: typeof audioData,
+      length: audioData?.length || 0,
+      audioInfo: audioInfo
+    });
+    
+    // 音声データの検証
+    if (!audioData || typeof audioData !== 'string') {
+      return res.status(400).json({ error: 'MP3形式の音声データが必要です' });
     }
 
     // Base64デコードして一時ファイルに保存
-    const audioBuffer = Buffer.from(audioFile.split(',')[1], 'base64');
+    const audioBuffer = Buffer.from(audioData, 'base64');
     const tempAudioPath = path.join('/tmp', `audio_${jobId}.mp3`);
-    fs.writeFileSync(tempAudioPath, audioBuffer);
+    
+    console.log(`Audio buffer size: ${audioBuffer.length} bytes`);
+    console.log(`Temp file path: ${tempAudioPath}`);
+    
+    // ディレクトリが存在しない場合は作成
+    if (!fs.existsSync('/tmp')) {
+      fs.mkdirSync('/tmp', { recursive: true });
+      console.log('Created /tmp directory');
+    }
+    
+    // 非同期でファイルを書き込み
+    await fs.promises.writeFile(tempAudioPath, audioBuffer);
+    console.log('Audio file written successfully');
 
     // 音声ファイルの情報を取得
     const audioMetadata = await getAudioMetadata(tempAudioPath);
