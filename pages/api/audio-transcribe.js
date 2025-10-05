@@ -1,15 +1,28 @@
 /**
- * Vimeo APIを使用した長時間動画の文字起こし機能
- * 実際に動作する完全な実装
+ * MP3音声ファイルの文字起こし機能
+ * CloudRun + チャンク分割による効率的な処理
  */
 
 import crypto from 'crypto';
 import { saveJobState, loadJobState, updateJobState } from '../../lib/storage.js';
+import { SpeechClient } from '@google-cloud/speech';
+import { exec } from 'child_process';
+import { promisify } from 'util';
+import fs from 'fs';
+import path from 'path';
+
+const execAsync = promisify(exec);
+
+// Google Cloud Speech-to-Text クライアントの初期化
+const speechClient = new SpeechClient({
+  projectId: process.env.GOOGLE_CLOUD_PROJECT_ID || 'whgc-project',
+  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+});
 
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: '50mb',
+      sizeLimit: '100mb', // MP3ファイル用にサイズ制限を拡大
     },
   },
 };
@@ -30,10 +43,10 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { vimeoUrl, resume_job_id, lecture_info } = req.body;
+    const { audioFile, resume_job_id, audioInfo } = req.body;
 
-    if (!vimeoUrl && !resume_job_id) {
-      return res.status(400).json({ error: 'Vimeo URLまたは再開ジョブIDが必要です' });
+    if (!audioFile && !resume_job_id) {
+      return res.status(400).json({ error: '音声ファイルまたは再開ジョブIDが必要です' });
     }
 
     // 既存のジョブを再開する場合
@@ -42,10 +55,10 @@ export default async function handler(req, res) {
     }
 
     // 新しいジョブを開始
-    return await startNewTranscriptionJob(vimeoUrl, lecture_info, res);
+    return await startNewTranscriptionJob(audioFile, audioInfo, res);
 
   } catch (error) {
-    console.error('Vimeo transcription error:', error);
+    console.error('Audio transcription error:', error);
     res.status(500).json({
       error: '文字起こしエラーが発生しました',
       details: error.message
@@ -56,44 +69,30 @@ export default async function handler(req, res) {
 /**
  * 新しい文字起こしジョブを開始
  */
-async function startNewTranscriptionJob(vimeoUrl, lectureInfo, res) {
+async function startNewTranscriptionJob(audioFile, audioInfo, res) {
   try {
     // ジョブIDを生成
     const jobId = generateJobId();
     
-    // Vimeo URLの検証（validate-vimeo-url.jsのAPIを呼び出し）
-    const validateResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://darwin-project-574364248563.asia-northeast1.run.app'}/api/validate-vimeo-url`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ url: vimeoUrl })
-    });
-    
-    if (!validateResponse.ok) {
-      return res.status(400).json({ error: 'Vimeo URLの検証に失敗しました' });
+    // 音声ファイルの検証
+    if (!audioFile || !audioFile.startsWith('data:audio/mp3;base64,')) {
+      return res.status(400).json({ error: 'MP3形式の音声ファイルが必要です' });
     }
-    
-    const validateData = await validateResponse.json();
-    if (!validateData.valid) {
-      return res.status(400).json({ error: '無効なVimeo URLです' });
-    }
-    
-    const videoInfo = {
-      videoId: validateData.videoId,
-      title: validateData.title,
-      duration: validateData.duration,
-      description: validateData.description,
-      thumbnail: validateData.thumbnail,
-      embed: validateData.embed
-    };
 
+    // Base64デコードして一時ファイルに保存
+    const audioBuffer = Buffer.from(audioFile.split(',')[1], 'base64');
+    const tempAudioPath = path.join('/tmp', `audio_${jobId}.mp3`);
+    fs.writeFileSync(tempAudioPath, audioBuffer);
+
+    // 音声ファイルの情報を取得
+    const audioMetadata = await getAudioMetadata(tempAudioPath);
+    
     // 処理状態を初期化
     const processingState = {
       jobId,
-      vimeoUrl,
-      videoInfo,
-      lectureInfo,
+      audioInfo: audioInfo || {},
+      audioMetadata,
+      tempAudioPath,
       status: 'initializing',
       progress: 0,
       chunks: [],
@@ -105,7 +104,7 @@ async function startNewTranscriptionJob(vimeoUrl, lectureInfo, res) {
       result: null
     };
 
-    saveJobState(jobId, processingState);
+    await saveJobState(jobId, processingState);
 
     // 非同期で処理を開始
     processTranscriptionAsync(jobId);
@@ -113,8 +112,9 @@ async function startNewTranscriptionJob(vimeoUrl, lectureInfo, res) {
     res.status(200).json({
       status: 'started',
       jobId,
-      message: '文字起こし処理を開始しました',
-      estimatedDuration: estimateProcessingTime(videoInfo.duration || 0)
+      message: '音声文字起こし処理を開始しました',
+      estimatedDuration: estimateProcessingTime(audioMetadata.duration || 0),
+      audioMetadata
     });
 
   } catch (error) {
@@ -128,7 +128,7 @@ async function startNewTranscriptionJob(vimeoUrl, lectureInfo, res) {
  */
 async function resumeTranscriptionJob(jobId, res) {
   try {
-    const processingState = loadJobState(jobId);
+    const processingState = await loadJobState(jobId);
     
     if (!processingState) {
       return res.status(404).json({ error: 'ジョブが見つかりません' });
@@ -145,7 +145,7 @@ async function resumeTranscriptionJob(jobId, res) {
     // 処理を再開
     processingState.status = 'resuming';
     processingState.lastUpdate = new Date().toISOString();
-    saveJobState(jobId, processingState);
+    await saveJobState(jobId, processingState);
     
     // 非同期で処理を再開
     processTranscriptionAsync(jobId);
@@ -153,7 +153,7 @@ async function resumeTranscriptionJob(jobId, res) {
     res.status(200).json({
       status: 'resumed',
       jobId,
-      message: '文字起こし処理を再開しました',
+      message: '音声文字起こし処理を再開しました',
       progress: processingState.progress
     });
 
@@ -183,16 +183,17 @@ async function processTranscriptionAsync(jobId) {
       processingState.retryCount = retryCount;
       await saveJobState(jobId, processingState);
 
-      // デバッグログを追加
-      console.log('Processing state:', {
+      console.log('Processing audio file:', {
         jobId,
-        hasVideoInfo: !!processingState.videoInfo,
-        videoInfo: processingState.videoInfo,
-        duration: processingState.videoInfo?.duration
+        duration: processingState.audioMetadata?.duration,
+        tempPath: processingState.tempAudioPath
       });
       
       // 1. 音声をチャンクに分割
-      const chunks = splitAudioIntoChunks(processingState.videoInfo?.duration || 0);
+      const chunks = await splitAudioIntoChunks(
+        processingState.tempAudioPath, 
+        processingState.audioMetadata.duration
+      );
       
       processingState.chunks = chunks;
       processingState.totalChunks = chunks.length;
@@ -205,7 +206,10 @@ async function processTranscriptionAsync(jobId) {
       // 3. 結果を統合
       const finalResult = mergeTranscriptionResults(transcriptionResults);
       
-      // 4. 処理完了
+      // 4. 一時ファイルをクリーンアップ
+      await cleanupTempFiles(processingState.tempAudioPath, chunks);
+      
+      // 5. 処理完了
       processingState.status = 'completed';
       processingState.progress = 100;
       processingState.result = finalResult;
@@ -239,15 +243,43 @@ async function processTranscriptionAsync(jobId) {
   }
 }
 
-// validateVimeoUrl関数は削除（validate-vimeo-url.jsのAPIを使用）
+/**
+ * 音声ファイルのメタデータを取得
+ */
+async function getAudioMetadata(audioPath) {
+  try {
+    const { stdout } = await execAsync(`ffprobe -v quiet -print_format json -show_format -show_streams "${audioPath}"`);
+    const metadata = JSON.parse(stdout);
+    
+    const audioStream = metadata.streams.find(stream => stream.codec_type === 'audio');
+    const duration = parseFloat(metadata.format.duration) || 0;
+    
+    return {
+      duration,
+      sampleRate: audioStream?.sample_rate || 44100,
+      channels: audioStream?.channels || 2,
+      bitrate: audioStream?.bit_rate || metadata.format.bit_rate,
+      format: metadata.format.format_name,
+      size: metadata.format.size
+    };
+  } catch (error) {
+    console.error('Error getting audio metadata:', error);
+    return {
+      duration: 0,
+      sampleRate: 44100,
+      channels: 2,
+      bitrate: 128000,
+      format: 'mp3',
+      size: 0
+    };
+  }
+}
 
 /**
- * 音声をチャンクに分割（改善版）
- * 他の事例を参考にした効率的な分割処理
+ * 音声をチャンクに分割（MP3専用最適化版）
  */
-function splitAudioIntoChunks(duration) {
-  // デフォルトの動画長を設定（5分）
-  const safeDuration = duration || 300;
+async function splitAudioIntoChunks(audioPath, duration) {
+  const safeDuration = duration || 300; // デフォルト5分
   
   // チャンクサイズを動的に調整
   let chunkDuration;
@@ -269,11 +301,14 @@ function splitAudioIntoChunks(duration) {
     const endTime = Math.min((i + 1) * chunkDuration, safeDuration);
     const actualDuration = endTime - startTime;
     
+    const chunkPath = path.join('/tmp', `chunk_${i}_${Date.now()}.mp3`);
+    
     chunks.push({
       id: `chunk_${i}`,
       startTime,
       endTime,
       duration: actualDuration,
+      chunkPath,
       status: 'pending',
       result: null,
       error: null,
@@ -282,15 +317,35 @@ function splitAudioIntoChunks(duration) {
     });
   }
 
+  // FFmpegで実際にチャンクファイルを作成
+  await createChunkFiles(audioPath, chunks);
+
   return chunks;
 }
 
 /**
- * チャンクを順次処理（改善版）
- * リトライ機能とエラーハンドリングを強化
+ * FFmpegでチャンクファイルを作成
+ */
+async function createChunkFiles(audioPath, chunks) {
+  const createPromises = chunks.map(async (chunk) => {
+    try {
+      const command = `ffmpeg -i "${audioPath}" -ss ${chunk.startTime} -t ${chunk.duration} -c copy "${chunk.chunkPath}" -y`;
+      await execAsync(command);
+      console.log(`Created chunk file: ${chunk.chunkPath}`);
+    } catch (error) {
+      console.error(`Error creating chunk ${chunk.id}:`, error);
+      throw error;
+    }
+  });
+
+  await Promise.all(createPromises);
+}
+
+/**
+ * チャンクを順次処理
  */
 async function processChunksSequentially(chunks, jobId) {
-  const processingState = loadJobState(jobId);
+  const processingState = await loadJobState(jobId);
   if (!processingState) {
     console.error('Processing state not found for job:', jobId);
     return [];
@@ -314,8 +369,8 @@ async function processChunksSequentially(chunks, jobId) {
         
         console.log(`Processing chunk ${chunk.id} (attempt ${chunk.retryCount}/${chunk.maxRetries})`);
         
-        // チャンクの音声データを取得して文字起こし
-        const result = await processAudioChunk(chunk, processingState.vimeoUrl);
+        // チャンクの文字起こし
+        const result = await transcribeAudioChunk(chunk);
         
         chunk.status = 'completed';
         chunk.result = result;
@@ -362,105 +417,75 @@ async function processChunksSequentially(chunks, jobId) {
 }
 
 /**
- * 個別の音声チャンクを処理（改善版）
- * タイムアウトとエラーハンドリングを強化
+ * 個別の音声チャンクを文字起こし
  */
-async function processAudioChunk(chunk, vimeoUrl) {
+async function transcribeAudioChunk(chunk) {
   try {
-    console.log(`Processing chunk ${chunk.id}: ${chunk.startTime}s - ${chunk.endTime}s (${chunk.duration}s)`);
+    console.log(`Transcribing chunk ${chunk.id}: ${chunk.startTime}s - ${chunk.endTime}s (${chunk.duration}s)`);
     
-    // 1. Vimeoから音声データを取得（タイムアウト付き）
-    const audioController = new AbortController();
-    const audioTimeout = setTimeout(() => audioController.abort(), 60000); // 60秒タイムアウト
-    
-    const audioResponse = await fetch('/api/get-vimeo-audio', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        vimeoUrl: vimeoUrl,
-        startTime: chunk.startTime,
-        duration: chunk.duration
-      }),
-      signal: audioController.signal
+    // チャンクファイルを読み込み
+    const audioBuffer = fs.readFileSync(chunk.chunkPath);
+    const audioBytes = audioBuffer.toString('base64');
+
+    // 音声設定（MP3専用）
+    const audio = {
+      content: audioBytes,
+    };
+
+    const config = {
+      encoding: 'MP3',
+      sampleRateHertz: 44100,
+      languageCode: 'ja-JP',
+      alternativeLanguageCodes: ['en-US'],
+      enableAutomaticPunctuation: true,
+      enableWordTimeOffsets: true,
+      enableWordConfidence: true,
+      model: 'latest_long',
+      useEnhanced: true,
+    };
+
+    // 文字起こしの実行
+    const [operation] = await speechClient.longRunningRecognize({
+      audio: audio,
+      config: config,
     });
 
-    clearTimeout(audioTimeout);
+    console.log('Transcription operation started for chunk:', chunk.id, operation.name);
 
-    if (!audioResponse.ok) {
-      const errorText = await audioResponse.text();
-      throw new Error(`音声データの取得に失敗しました: ${audioResponse.status} - ${errorText}`);
-    }
+    // 非同期処理の完了を待機
+    const [response] = await operation.promise();
 
-    const audioData = await audioResponse.json();
-    
-    if (!audioData.success || !audioData.audioData) {
-      throw new Error('音声データが正しく取得できませんでした');
-    }
-    
-    console.log(`Audio data retrieved for chunk ${chunk.id}: ${audioData.audioData.length} characters`);
-    
-    // 2. Speech-to-Text APIで文字起こし（タイムアウト付き）
-    const transcriptionController = new AbortController();
-    const transcriptionTimeout = setTimeout(() => transcriptionController.abort(), 120000); // 120秒タイムアウト
-    
-    const transcriptionResponse = await fetch('/api/transcribe', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        audioData: audioData.audioData,
-        format: audioData.format || 'wav',
-        startTime: chunk.startTime,
-        duration: chunk.duration
-      }),
-      signal: transcriptionController.signal
-    });
+    // 結果の処理
+    const results = response.results || [];
+    const transcriptions = results.map(result => ({
+      text: result.alternatives[0].transcript,
+      confidence: result.alternatives[0].confidence,
+      words: result.alternatives[0].words || []
+    }));
 
-    clearTimeout(transcriptionTimeout);
+    // 全体のテキストを結合
+    const fullText = transcriptions.map(t => t.text).join(' ');
 
-    if (!transcriptionResponse.ok) {
-      const errorText = await transcriptionResponse.text();
-      throw new Error(`文字起こしに失敗しました: ${transcriptionResponse.status} - ${errorText}`);
-    }
+    console.log(`Transcription completed for chunk ${chunk.id}: ${fullText.length} characters`);
 
-    const transcriptionResult = await transcriptionResponse.json();
-    
-    if (!transcriptionResult.transcription || !transcriptionResult.transcription.text) {
-      throw new Error('文字起こし結果が正しく取得できませんでした');
-    }
-    
-    console.log(`Transcription completed for chunk ${chunk.id}: ${transcriptionResult.transcription.text.length} characters`);
-    
     return {
       chunkId: chunk.id,
       startTime: chunk.startTime,
       endTime: chunk.endTime,
-      text: transcriptionResult.transcription.text,
-      confidence: transcriptionResult.transcription.totalConfidence || 0.8,
-      duration: chunk.duration
+      text: fullText,
+      confidence: calculateAverageConfidence(transcriptions),
+      duration: chunk.duration,
+      segments: transcriptions
     };
 
   } catch (error) {
-    console.error(`Chunk ${chunk.id} processing error:`, error);
-    
-    // エラーの種類に応じて詳細なメッセージを提供
-    if (error.name === 'AbortError') {
-      throw new Error(`チャンク ${chunk.id} の処理がタイムアウトしました`);
-    } else if (error.message.includes('fetch')) {
-      throw new Error(`チャンク ${chunk.id} のネットワーク通信に失敗しました: ${error.message}`);
-    } else {
-      throw new Error(`チャンク ${chunk.id} の処理に失敗しました: ${error.message}`);
-    }
+    console.error(`Chunk ${chunk.id} transcription error:`, error);
+    throw new Error(`チャンク ${chunk.id} の文字起こしに失敗しました: ${error.message}`);
   }
 }
 
-
 /**
- * 文字起こし結果を統合（改善版）
- * エラーハンドリングと品質チェックを強化
+ * 文字起こし結果を統合
  */
 function mergeTranscriptionResults(results) {
   const successfulResults = results
@@ -511,38 +536,35 @@ function mergeTranscriptionResults(results) {
 }
 
 /**
- * 講義録を永続化保存
+ * 一時ファイルをクリーンアップ
  */
-async function saveLectureRecord(jobId, processingState, finalResult) {
+async function cleanupTempFiles(audioPath, chunks) {
   try {
-    const lectureRecord = {
-      jobId: jobId,
-      title: processingState.lectureInfo?.theme || '講義録',
-      duration: finalResult.duration?.toString() || '0',
-      confidence: finalResult.averageConfidence || 0,
-      fullText: finalResult.fullText || '',
-      chunks: finalResult.chunks?.map((chunk, index) => ({
-        chunkId: `chunk_${index}`,
-        startTime: chunk.startTime || 0,
-        endTime: chunk.endTime || 0,
-        text: chunk.text || '',
-        confidence: chunk.confidence || 0
-      })) || [],
-      createdAt: processingState.startTime || new Date().toISOString(),
-      processed: finalResult.processed || false,
-      lectureInfo: processingState.lectureInfo || {},
-      videoInfo: processingState.videoInfo || {}
-    };
-    
-    // 講義録を別ファイルに保存
-    const recordFile = path.join('/tmp', `record_${jobId}.json`);
-    fs.writeFileSync(recordFile, JSON.stringify(lectureRecord, null, 2));
-    
-    console.log(`Lecture record saved: ${recordFile}`);
-    
+    // 元の音声ファイルを削除
+    if (fs.existsSync(audioPath)) {
+      fs.unlinkSync(audioPath);
+      console.log('Cleaned up original audio file:', audioPath);
+    }
+
+    // チャンクファイルを削除
+    for (const chunk of chunks) {
+      if (fs.existsSync(chunk.chunkPath)) {
+        fs.unlinkSync(chunk.chunkPath);
+        console.log('Cleaned up chunk file:', chunk.chunkPath);
+      }
+    }
   } catch (error) {
-    console.error('Error saving lecture record:', error);
+    console.error('Error cleaning up temp files:', error);
   }
+}
+
+/**
+ * 平均信頼度を計算
+ */
+function calculateAverageConfidence(transcriptions) {
+  if (transcriptions.length === 0) return 0;
+  const totalConfidence = transcriptions.reduce((sum, t) => sum + (t.confidence || 0), 0);
+  return totalConfidence / transcriptions.length;
 }
 
 /**

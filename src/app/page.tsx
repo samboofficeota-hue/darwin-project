@@ -38,6 +38,15 @@ export default function Home() {
             
             <div className="bg-white rounded-lg shadow-lg p-6">
               <h2 className="text-2xl font-semibold text-gray-800 mb-4">
+                🎵 音声ファイル文字起こし
+              </h2>
+              <p className="text-gray-600">
+                MP3形式の音声ファイルをアップロードして、チャンク分割による効率的な文字起こし
+              </p>
+            </div>
+            
+            <div className="bg-white rounded-lg shadow-lg p-6">
+              <h2 className="text-2xl font-semibold text-gray-800 mb-4">
                 📄 HTML講義録生成
               </h2>
               <p className="text-gray-600">
@@ -98,6 +107,12 @@ export default function Home() {
                  {/* サブアクション */}
                  <div className="mt-8 text-center">
                    <div className="space-x-4">
+                     <a
+                       href="/audio-transcribe"
+                       className="inline-block bg-orange-600 text-white py-2 px-6 rounded-lg font-semibold hover:bg-orange-700 transition-colors"
+                     >
+                       🎵 音声文字起こし
+                     </a>
                      <a
                        href="/vimeo-transcribe"
                        className="inline-block bg-green-600 text-white py-2 px-6 rounded-lg font-semibold hover:bg-green-700 transition-colors"
