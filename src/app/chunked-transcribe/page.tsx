@@ -4,6 +4,7 @@ import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { splitAudioFile } from '../../../lib/audio-splitter';
 import { uploadChunksToCloudStorage, saveSessionInfo } from '../../../lib/cloud-storage';
+import { downloadAllChunks, logChunkInfo } from '../../../lib/file-downloader';
 
 interface AudioChunk {
   id: string;
@@ -45,8 +46,11 @@ export default function ChunkedTranscribePage() {
 
   // ファイル選択時の処理
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('File select triggered:', event.target.files);
     const file = event.target.files?.[0];
     if (file) {
+      console.log('Selected file:', file.name, file.size, file.type);
+      
       // 音声ファイルかチェック
       if (!file.type.startsWith('audio/') && !file.name.toLowerCase().match(/\.(mp3|wav|m4a|aac)$/)) {
         setError('音声ファイルを選択してください');
@@ -62,55 +66,85 @@ export default function ChunkedTranscribePage() {
       setAudioFile(file);
       setError('');
       setCurrentStep('select');
+      console.log('File selected, currentStep set to:', 'select');
     }
   };
 
   // 音声ファイルの分割処理
   const handleSplitAudio = async () => {
+    console.log('handleSplitAudio called, audioFile:', audioFile);
     if (!audioFile) {
       setError('音声ファイルを選択してください');
       return;
     }
 
+    console.log('Starting audio splitting process...');
     setIsProcessing(true);
     setError('');
     setCurrentStep('split');
     setProgress(0);
 
     try {
-      console.log('Starting audio splitting process...');
-      
-      // 音声ファイルを分割
-      const audioChunks = await splitAudioFile(audioFile, 300); // 5分チャンク
+      // 進捗コールバック関数
+      const onProgress = (progressInfo) => {
+        console.log(`Progress: ${progressInfo.current}/${progressInfo.total} (${progressInfo.percentage}%)`);
+        setProgress(progressInfo.percentage);
+      };
+
+      // ファイルサイズに応じてチャンクサイズを動的に調整
+      let chunkDuration = 300; // デフォルト5分
+      if (audioFile.size > 50 * 1024 * 1024) { // 50MB以上
+        chunkDuration = 600; // 10分チャンク
+      } else if (audioFile.size > 20 * 1024 * 1024) { // 20MB以上
+        chunkDuration = 450; // 7.5分チャンク
+      }
+
+      console.log(`Using chunk duration: ${chunkDuration} seconds for file size: ${(audioFile.size / 1024 / 1024).toFixed(2)}MB`);
+
+      // 音声ファイルを分割（進捗コールバック付き）
+      const audioChunks = await splitAudioFile(audioFile, chunkDuration, onProgress);
       
       setChunks(audioChunks);
       setCurrentStep('upload');
-      setProgress(50);
+      setProgress(100);
+      
+      // チャンク情報をコンソールに出力
+      logChunkInfo(audioChunks);
       
       console.log(`Successfully split audio into ${audioChunks.length} chunks`);
       
     } catch (error) {
       console.error('Error splitting audio:', error);
       setError(error instanceof Error ? error.message : '音声ファイルの分割に失敗しました');
+    } finally {
+      // 処理完了後に必ずisProcessingをfalseに設定
+      console.log('Setting isProcessing to false');
       setIsProcessing(false);
     }
   };
 
   // Cloud Storageへのアップロード処理
   const handleUploadChunks = async () => {
+    console.log('handleUploadChunks called, chunks:', chunks.length);
     if (chunks.length === 0) {
       setError('分割されたチャンクがありません');
       return;
     }
 
+    // ローカル環境での制限チェック
+    if (process.env.NODE_ENV === 'development' || !process.env.VERCEL) {
+      setError('Cloud Storageアップロードは本番環境でのみ利用可能です。\n\nローカル環境では、チャンクをダウンロードしてご利用ください。');
+      setIsProcessing(false);
+      return;
+    }
+
+    console.log('Starting chunk upload process...');
     setIsProcessing(true);
     setError('');
     setCurrentStep('upload');
     setProgress(50);
 
     try {
-      console.log('Starting chunk upload process...');
-      
       // セッション情報を保存
       const sessionData = {
         originalFileName: audioFile?.name,
@@ -122,9 +156,12 @@ export default function ChunkedTranscribePage() {
         status: 'uploading'
       };
       
+      console.log('Saving session info...');
       await saveSessionInfo(userId, sessionId, sessionData);
+      console.log('Session info saved successfully');
       
       // チャンクをCloud Storageにアップロード
+      console.log('Starting Cloud Storage upload...');
       const results = await uploadChunksToCloudStorage(chunks, userId, sessionId);
       
       setUploadResults(results);
@@ -135,6 +172,11 @@ export default function ChunkedTranscribePage() {
       
     } catch (error) {
       console.error('Error uploading chunks:', error);
+      console.error('Error details:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack
+      });
       setError(error instanceof Error ? error.message : 'チャンクのアップロードに失敗しました');
       setIsProcessing(false);
     }
@@ -201,6 +243,16 @@ export default function ChunkedTranscribePage() {
       default: return '';
     }
   };
+
+  // デバッグ情報をコンソールに出力
+  console.log('Component render state:', {
+    currentStep,
+    audioFile: audioFile?.name,
+    chunks: chunks.length,
+    uploadResults: uploadResults.length,
+    isProcessing,
+    error
+  });
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -275,7 +327,7 @@ export default function ChunkedTranscribePage() {
                   分割完了
                 </h3>
                 <p className="text-sm text-green-700">
-                  {chunks.length}個のチャンクに分割されました（各5分）
+                  {chunks.length}個のチャンクに分割されました
                 </p>
                 <div className="mt-2 text-xs text-green-600">
                   {chunks.map((chunk, index) => (
@@ -283,6 +335,27 @@ export default function ChunkedTranscribePage() {
                       チャンク {index + 1}: {chunk.startTime}s - {chunk.endTime}s
                     </div>
                   ))}
+                </div>
+                
+                {/* ローカル環境での説明 */}
+                {process.env.NODE_ENV === 'development' && (
+                  <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded">
+                    <p className="text-sm text-blue-800">
+                      💡 ローカル環境では、チャンクをダウンロードしてご利用ください
+                    </p>
+                    <p className="text-xs text-blue-600 mt-1">
+                      本番環境では、これらのチャンクをCloud Storageにアップロードして文字起こしを行います
+                    </p>
+                  </div>
+                )}
+                
+                <div className="mt-3">
+                  <button
+                    onClick={() => downloadAllChunks(chunks, audioFile?.name || 'audio')}
+                    className="px-4 py-2 bg-green-600 text-white text-sm rounded hover:bg-green-700"
+                  >
+                    チャンクをダウンロード
+                  </button>
                 </div>
               </div>
             )}
@@ -319,13 +392,36 @@ export default function ChunkedTranscribePage() {
               )}
               
               {currentStep === 'upload' && chunks.length > 0 && (
-                <button
-                  onClick={handleUploadChunks}
-                  disabled={isProcessing}
-                  className="px-6 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 disabled:bg-gray-400"
-                >
-                  アップロード開始
-                </button>
+                <div className="space-y-3">
+                  {/* ローカル環境での制限表示 */}
+                  {process.env.NODE_ENV === 'development' && (
+                    <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3">
+                      <p className="text-sm text-yellow-800">
+                        ⚠️ ローカル環境ではCloud Storageアップロードは利用できません
+                      </p>
+                      <p className="text-xs text-yellow-700 mt-1">
+                        本番環境（Vercel）にデプロイ後にご利用ください
+                      </p>
+                    </div>
+                  )}
+                  
+                  <button
+                    onClick={handleUploadChunks}
+                    disabled={isProcessing || process.env.NODE_ENV === 'development'}
+                    className={`px-6 py-3 rounded-lg font-medium ${
+                      isProcessing || process.env.NODE_ENV === 'development'
+                        ? 'bg-gray-400 text-gray-600 cursor-not-allowed' 
+                        : 'bg-green-600 text-white hover:bg-green-700'
+                    }`}
+                  >
+                    {process.env.NODE_ENV === 'development' 
+                      ? 'ローカル環境では利用不可' 
+                      : isProcessing 
+                        ? '処理中...' 
+                        : 'アップロード開始'
+                    }
+                  </button>
+                </div>
               )}
               
               {currentStep === 'transcribe' && uploadResults.length > 0 && (
