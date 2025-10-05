@@ -5,6 +5,10 @@ const nextConfig = {
   experimental: {
     serverComponentsExternalPackages: ['@google-cloud/speech'],
   },
+  // CloudRun用の設定
+  serverRuntimeConfig: {
+    maxFileSize: '50mb',
+  },
   // 静的ファイルの配信設定
   async headers() {
     return [

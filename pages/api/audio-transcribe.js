@@ -22,7 +22,7 @@ const speechClient = new SpeechClient({
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: '100mb', // MP3ファイル用にサイズ制限を拡大
+      sizeLimit: '50mb', // MP3ファイル用にサイズ制限を設定
     },
   },
 };

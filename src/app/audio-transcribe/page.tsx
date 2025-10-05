@@ -24,9 +24,9 @@ export default function AudioTranscribePage() {
         return;
       }
       
-      // ファイルサイズチェック（100MB制限）
-      if (file.size > 100 * 1024 * 1024) {
-        setError('ファイルサイズが100MBを超えています');
+      // ファイルサイズチェック（50MB制限）
+      if (file.size > 50 * 1024 * 1024) {
+        setError('ファイルサイズが50MBを超えています');
         return;
       }
       
@@ -186,7 +186,7 @@ export default function AudioTranscribePage() {
                     />
                   </label>
                   <p className="text-sm text-gray-500 mt-2">
-                    MP3形式の音声ファイル（最大100MB）
+                    MP3形式の音声ファイル（最大50MB）
                   </p>
                 </div>
                 
