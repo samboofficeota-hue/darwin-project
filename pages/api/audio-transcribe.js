@@ -117,19 +117,43 @@ async function startNewTranscriptionJob(audioData, audioInfo, res) {
     console.log('Audio data info:', {
       type: typeof audioData,
       length: audioData?.length || 0,
-      audioInfo: audioInfo
+      audioInfo: audioInfo,
+      audioDataPreview: audioData?.substring(0, 100) + '...'
     });
     
     // 音声データの検証
     if (!audioData || typeof audioData !== 'string') {
-      return res.status(400).json({ error: 'MP3形式の音声データが必要です' });
+      console.error('Invalid audio data:', {
+        audioData: audioData,
+        type: typeof audioData,
+        isNull: audioData === null,
+        isUndefined: audioData === undefined,
+        isEmpty: audioData === ''
+      });
+      return res.status(400).json({ 
+        error: 'MP3形式の音声データが必要です',
+        details: {
+          received: !!audioData,
+          type: typeof audioData,
+          length: audioData?.length || 0
+        }
+      });
     }
 
     // Base64デコードして一時ファイルに保存
-    const audioBuffer = Buffer.from(audioData, 'base64');
-    const tempAudioPath = path.join('/tmp', `audio_${jobId}.mp3`);
+    let audioBuffer;
+    try {
+      audioBuffer = Buffer.from(audioData, 'base64');
+      console.log(`Audio buffer size: ${audioBuffer.length} bytes`);
+    } catch (decodeError) {
+      console.error('Base64 decode error:', decodeError);
+      return res.status(400).json({ 
+        error: 'Base64データのデコードに失敗しました',
+        details: decodeError.message
+      });
+    }
     
-    console.log(`Audio buffer size: ${audioBuffer.length} bytes`);
+    const tempAudioPath = path.join('/tmp', `audio_${jobId}.mp3`);
     console.log(`Temp file path: ${tempAudioPath}`);
     
     // ディレクトリが存在しない場合は作成

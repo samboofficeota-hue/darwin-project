@@ -50,6 +50,16 @@ export default function AudioTranscribePage() {
       // ファイルをBase64に変換
       const base64Audio = await fileToBase64(audioFile);
       
+      console.log('Sending request with:', {
+        audioDataLength: base64Audio?.length || 0,
+        audioDataPreview: base64Audio?.substring(0, 50) + '...',
+        audioInfo: {
+          fileName: audioFile.name,
+          fileSize: audioFile.size,
+          fileType: audioFile.type
+        }
+      });
+      
       const response = await fetch('/api/audio-transcribe', {
         method: 'POST',
         headers: {
@@ -66,8 +76,14 @@ export default function AudioTranscribePage() {
       });
 
       const data = await response.json();
+      console.log('Response received:', {
+        status: response.status,
+        ok: response.ok,
+        data: data
+      });
 
       if (!response.ok) {
+        console.error('Upload failed:', data);
         throw new Error(data.error || 'アップロードに失敗しました');
       }
 
@@ -91,11 +107,24 @@ export default function AudioTranscribePage() {
       reader.readAsDataURL(file);
       reader.onload = () => {
         const result = reader.result as string;
+        console.log('FileReader result:', result?.substring(0, 100) + '...');
+        
         // data:audio/mpeg;base64, プレフィックスを削除して純粋なBase64文字列を返す
         const base64String = result.split(',')[1];
+        console.log('Base64 string length:', base64String?.length);
+        console.log('Base64 string preview:', base64String?.substring(0, 50) + '...');
+        
+        if (!base64String) {
+          reject(new Error('Base64変換に失敗しました'));
+          return;
+        }
+        
         resolve(base64String);
       };
-      reader.onerror = error => reject(error);
+      reader.onerror = error => {
+        console.error('FileReader error:', error);
+        reject(error);
+      };
     });
   };
 
