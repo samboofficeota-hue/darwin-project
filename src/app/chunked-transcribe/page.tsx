@@ -39,10 +39,38 @@ export default function ChunkedTranscribePage() {
   const [currentStep, setCurrentStep] = useState<'select' | 'split' | 'upload' | 'transcribe' | 'complete'>('select');
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string>('');
+  const [corsSetup, setCorsSetup] = useState<'pending' | 'success' | 'error'>('pending');
   const [userId] = useState<string>('user_' + Date.now()); // 簡易的なユーザーID
   const [sessionId] = useState<string>('session_' + Date.now()); // 簡易的なセッションID
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+
+  // CORS設定の実行
+  const setupCORS = async () => {
+    try {
+      setCorsSetup('pending');
+      console.log('Setting up CORS...');
+      
+      const response = await fetch('/api/setup-cors', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error(`CORS setup failed: ${response.status}`);
+      }
+
+      const result = await response.json();
+      console.log('CORS setup result:', result);
+      setCorsSetup('success');
+      
+    } catch (error) {
+      console.error('CORS setup error:', error);
+      setCorsSetup('error');
+    }
+  };
 
   // ファイル選択時の処理
   const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -363,6 +391,34 @@ export default function ChunkedTranscribePage() {
                     <p className="text-sm text-gray-500 mt-2">
                       音声ファイル（最大500MB）
                     </p>
+                  </div>
+                  
+                  {/* CORS設定ボタン */}
+                  <div className="mt-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                    <p className="text-sm text-yellow-800 mb-3">
+                      署名付きURLアップロードを使用するには、まずCORS設定が必要です。
+                    </p>
+                    <button
+                      onClick={setupCORS}
+                      disabled={corsSetup === 'pending'}
+                      className={`px-4 py-2 rounded-md text-sm font-medium ${
+                        corsSetup === 'success'
+                          ? 'bg-green-100 text-green-800 border border-green-200'
+                          : corsSetup === 'error'
+                          ? 'bg-red-100 text-red-800 border border-red-200'
+                          : 'bg-yellow-100 text-yellow-800 border border-yellow-200 hover:bg-yellow-200'
+                      }`}
+                    >
+                      {corsSetup === 'pending' && 'CORS設定中...'}
+                      {corsSetup === 'success' && '✓ CORS設定完了'}
+                      {corsSetup === 'error' && '✗ CORS設定失敗 - 再試行'}
+                      {corsSetup !== 'pending' && corsSetup !== 'success' && corsSetup !== 'error' && 'CORS設定を実行'}
+                    </button>
+                    {corsSetup === 'error' && (
+                      <p className="text-xs text-red-600 mt-2">
+                        設定に失敗しました。ページを再読み込みして再試行してください。
+                      </p>
+                    )}
                   </div>
                   
                   {audioFile && (
