@@ -64,11 +64,11 @@ export default async function handler(req, res) {
     };
 
     if (operation === 'upload') {
-      // アップロード用の署名付きURLを生成（MP3形式に変更）
+      // アップロード用の署名付きURLを生成（Content-Type指定なし）
       [signedUrl] = await file.getSignedUrl({
         ...options,
         action: 'write',
-        contentType: 'audio/mp3',
+        // contentTypeを指定しない（プリフライトリクエスト回避のため）
       });
     } else if (operation === 'download') {
       // ダウンロード用の署名付きURLを生成
