@@ -132,7 +132,7 @@ export default function ChunkedTranscribePage() {
     }
 
     // ローカル環境での制限チェック
-    if (process.env.NODE_ENV === 'development' || !process.env.VERCEL) {
+    if (process.env.NODE_ENV === 'development' || process.env.VERCEL !== '1') {
       setError('Cloud Storageアップロードは本番環境でのみ利用可能です。\n\nローカル環境では、チャンクをダウンロードしてご利用ください。');
       setIsProcessing(false);
       return;
