@@ -48,48 +48,24 @@ export default async function handler(req, res) {
     // CORS設定（署名付きURLアップロード用に最適化）
     const corsConfiguration = [
       {
-        // 署名付きURLアップロード用の設定
-        origin: [
-          'https://darwin-project-gold.vercel.app',
-          'https://*.vercel.app', // Vercelのプレビュードメイン対応
-          'http://localhost:3000',
-          'http://localhost:3001',
-          'http://localhost:3002',
-          'http://127.0.0.1:3000',
-          'http://127.0.0.1:3001',
-          'http://127.0.0.1:3002'
-        ],
-        method: ['PUT', 'GET', 'HEAD', 'OPTIONS'], // 署名付きURLアップロードは主にPUT
+        // 署名付きURLアップロード専用設定
+        origin: ['*'], // すべてのオリジンを許可（署名付きURLはセキュア）
+        method: ['PUT', 'GET', 'HEAD'], // OPTIONSを削除（プリフライトリクエスト回避）
         responseHeader: [
           'Content-Type',
           'Content-Length',
           'ETag',
           'Last-Modified',
           'Date',
-          'Server',
-          'Access-Control-Allow-Origin',
-          'Access-Control-Allow-Methods',
-          'Access-Control-Allow-Headers',
-          'Access-Control-Expose-Headers',
-          'X-Goog-Algorithm',
-          'X-Goog-Credential',
-          'X-Goog-Date',
-          'X-Goog-Expires',
-          'X-Goog-SignedHeaders',
-          'X-Goog-Signature'
+          'Server'
         ],
         maxAgeSeconds: 3600
-      },
-      {
-        // 並列アップロード用の追加設定（Phase 2対応）
-        origin: ['*'], // 並列アップロード時の柔軟性のため
-        method: ['PUT', 'OPTIONS'],
-        responseHeader: ['*'],
-        maxAgeSeconds: 1800 // 短めのキャッシュ時間
       }
     ];
     
-    // バケットのCORS設定を更新
+    // 既存のCORS設定をクリアしてから新しい設定を適用
+    await bucket.setCorsConfiguration([]);
+    await new Promise(resolve => setTimeout(resolve, 1000)); // 1秒待機
     await bucket.setCorsConfiguration(corsConfiguration);
     
     console.log('CORS configuration updated successfully!');
