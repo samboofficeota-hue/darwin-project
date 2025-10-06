@@ -146,8 +146,9 @@ export default function ChunkedTranscribePage() {
       shouldBlock: process.env.NODE_ENV === 'development' || process.env.VERCEL !== '1'
     });
     
-    if (process.env.NODE_ENV === 'development' || process.env.VERCEL !== '1') {
-      console.log('Environment check failed - blocking upload');
+    // 本番環境（NODE_ENV === 'production'）では、VERCEL環境変数に関係なくアップロードを許可
+    if (process.env.NODE_ENV === 'development') {
+      console.log('Development environment - blocking upload');
       setError('Cloud Storageアップロードは本番環境でのみ利用可能です。\n\nローカル環境では、チャンクをダウンロードしてご利用ください。');
       setIsProcessing(false);
       return;
