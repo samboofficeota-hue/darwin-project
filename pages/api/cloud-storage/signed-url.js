@@ -49,8 +49,8 @@ export default async function handler(req, res) {
       });
     }
 
-    // ファイルパスを生成
-    const filePath = `users/${userId}/sessions/${sessionId}/chunks/${chunkId}.wav`;
+    // ファイルパスを生成（MP3形式に変更）
+    const filePath = `users/${userId}/sessions/${sessionId}/chunks/${chunkId}.mp3`;
     
     // バケットとファイルオブジェクトを取得
     const bucket = storage.bucket(BUCKET_NAME);
@@ -64,11 +64,11 @@ export default async function handler(req, res) {
     };
 
     if (operation === 'upload') {
-      // アップロード用の署名付きURLを生成
+      // アップロード用の署名付きURLを生成（MP3形式に変更）
       [signedUrl] = await file.getSignedUrl({
         ...options,
         action: 'write',
-        contentType: 'audio/wav',
+        contentType: 'audio/mp3',
       });
     } else if (operation === 'download') {
       // ダウンロード用の署名付きURLを生成

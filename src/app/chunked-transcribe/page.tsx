@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { splitAudioFile } from '../../../lib/audio-splitter';
-import { uploadChunksToCloudStorage, saveSessionInfo } from '../../../lib/cloud-storage';
+import { uploadChunksToCloudStorage, uploadChunksWithSignedUrl, saveSessionInfo } from '../../../lib/cloud-storage';
 import { downloadAllChunks, logChunkInfo } from '../../../lib/file-downloader';
 
 interface AudioChunk {
@@ -91,12 +91,12 @@ export default function ChunkedTranscribePage() {
         setProgress(progressInfo.percentage);
       };
 
-      // ファイルサイズに応じてチャンクサイズを動的に調整
-      let chunkDuration = 300; // デフォルト5分
-      if (audioFile.size > 50 * 1024 * 1024) { // 50MB以上
-        chunkDuration = 600; // 10分チャンク
-      } else if (audioFile.size > 20 * 1024 * 1024) { // 20MB以上
-        chunkDuration = 450; // 7.5分チャンク
+      // ファイルサイズに応じてチャンクサイズを動的に調整（3分ベース）
+      let chunkDuration = 180; // デフォルト3分
+      if (audioFile.size > 100 * 1024 * 1024) { // 100MB以上
+        chunkDuration = 300; // 5分チャンク
+      } else if (audioFile.size > 50 * 1024 * 1024) { // 50MB以上
+        chunkDuration = 240; // 4分チャンク
       }
 
       console.log(`Using chunk duration: ${chunkDuration} seconds for file size: ${(audioFile.size / 1024 / 1024).toFixed(2)}MB`);
@@ -176,7 +176,7 @@ export default function ChunkedTranscribePage() {
         originalFileSize: audioFile?.size,
         originalFileType: audioFile?.type,
         totalChunks: chunks.length,
-        chunkDuration: 300,
+        chunkDuration: 180, // 3分チャンクに変更
         createdAt: new Date().toISOString(),
         status: 'uploading'
       };
@@ -198,7 +198,8 @@ export default function ChunkedTranscribePage() {
         setProgress(50 + (progressInfo.percentage * 0.25)); // 50-75%の範囲で進捗を更新
       };
       
-      const results = await uploadChunksToCloudStorage(chunks, userId, sessionId, onUploadProgress);
+      // 署名付きURL方式でアップロード（Phase 1: シーケンシャル）
+      const results = await uploadChunksWithSignedUrl(chunks, userId, sessionId, onUploadProgress);
       
       console.log('Upload results:', results);
       
