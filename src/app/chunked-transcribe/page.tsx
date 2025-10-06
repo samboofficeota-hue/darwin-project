@@ -125,18 +125,35 @@ export default function ChunkedTranscribePage() {
 
   // Cloud Storageへのアップロード処理
   const handleUploadChunks = async () => {
+    console.log('=== handleUploadChunks START ===');
     console.log('handleUploadChunks called, chunks:', chunks.length);
+    console.log('chunks array:', chunks);
+    
     if (chunks.length === 0) {
+      console.log('No chunks available, returning early');
       setError('分割されたチャンクがありません');
       return;
     }
 
+    console.log('Chunks available, proceeding to environment check');
+
     // ローカル環境での制限チェック
+    console.log('Environment check:', {
+      NODE_ENV: process.env.NODE_ENV,
+      VERCEL: process.env.VERCEL,
+      isDevelopment: process.env.NODE_ENV === 'development',
+      isNotVercel: process.env.VERCEL !== '1',
+      shouldBlock: process.env.NODE_ENV === 'development' || process.env.VERCEL !== '1'
+    });
+    
     if (process.env.NODE_ENV === 'development' || process.env.VERCEL !== '1') {
+      console.log('Environment check failed - blocking upload');
       setError('Cloud Storageアップロードは本番環境でのみ利用可能です。\n\nローカル環境では、チャンクをダウンロードしてご利用ください。');
       setIsProcessing(false);
       return;
     }
+
+    console.log('Environment check passed - proceeding with upload');
 
     console.log('Starting chunk upload process...');
     setIsProcessing(true);
