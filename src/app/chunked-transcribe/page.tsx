@@ -3,7 +3,7 @@
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { splitAudioFile } from '../../../lib/audio-splitter';
-import { uploadChunksToCloudStorage, uploadChunksWithSignedUrl, saveSessionInfo } from '../../../lib/cloud-storage';
+import { uploadChunksWithSignedUrl, saveSessionInfo } from '../../../lib/cloud-storage';
 import { downloadAllChunks, logChunkInfo } from '../../../lib/file-downloader';
 
 interface AudioChunk {
