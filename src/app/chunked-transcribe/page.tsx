@@ -2,7 +2,8 @@
 
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { uploadAudioToServer } from '../../../lib/server-audio-upload';
+import { splitAudioFile } from '../../../lib/audio-splitter';
+import { uploadChunksWithSignedUrl, saveSessionInfo } from '../../../lib/cloud-storage';
 import { logChunkInfo } from '../../../lib/file-downloader';
 
 interface AudioChunk {
@@ -11,24 +12,26 @@ interface AudioChunk {
   startTime: number;
   endTime: number;
   duration: number;
+  data: string;
   fileName: string;
-  status: string;
-  error?: string;
-  uploadResult?: any;
+  metadata: {
+    originalFileName: string;
+    originalFileSize: number;
+    originalFileType: string;
+    totalChunks: number;
+    chunkIndex: number;
+  };
 }
 
 interface UploadResult {
   id: string;
+  index: number;
+  startTime: number;
+  endTime: number;
+  duration: number;
   status: string;
   error?: string;
-}
-
-interface ServerUploadResult {
-  success: boolean;
-  totalChunks: number;
-  chunkDuration: number;
-  chunks: AudioChunk[];
-  message: string;
+  uploadResult?: any;
 }
 
 export default function ChunkedTranscribePage() {
@@ -57,7 +60,7 @@ export default function ChunkedTranscribePage() {
     }
   };
 
-  // 音声ファイルの分割処理（サーバーサイド）
+  // 音声ファイルの分割処理
   const handleSplitAudio = async () => {
     console.log('handleSplitAudio called, audioFile:', audioFile);
     if (!audioFile) {
@@ -65,7 +68,7 @@ export default function ChunkedTranscribePage() {
       return;
     }
 
-    console.log('Starting server-side audio splitting process...');
+    console.log('Starting audio splitting process...');
     setIsProcessing(true);
     setError('');
     setCurrentStep('split');
@@ -88,21 +91,21 @@ export default function ChunkedTranscribePage() {
 
       console.log(`Using chunk duration: ${chunkDuration} seconds for file size: ${(audioFile.size / 1024 / 1024).toFixed(2)}MB`);
 
-      // サーバーサイドで音声分割とアップロードを実行
-      const result = await uploadAudioToServer(audioFile, userId, sessionId, chunkDuration, onProgress) as ServerUploadResult;
+      // 音声ファイルを分割（進捗コールバック付き）
+      const audioChunks = await splitAudioFile(audioFile, chunkDuration, onProgress);
       
-      setChunks(result.chunks);
-      setCurrentStep('transcribe');
+      setChunks(audioChunks);
+      setCurrentStep('upload');
       setProgress(100);
       
       // チャンク情報をコンソールに出力
-      logChunkInfo(result.chunks);
+      logChunkInfo(audioChunks);
       
-      console.log(`Successfully processed audio: ${result.totalChunks} chunks uploaded`);
+      console.log(`Successfully split audio into ${audioChunks.length} chunks`);
       
     } catch (error) {
-      console.error('Error processing audio:', error);
-      setError(error instanceof Error ? error.message : '音声ファイルの処理に失敗しました');
+      console.error('Error splitting audio:', error);
+      setError(error instanceof Error ? error.message : '音声ファイルの分割に失敗しました');
     } finally {
       // 処理完了後に必ずisProcessingをfalseに設定
       console.log('Setting isProcessing to false');
@@ -110,17 +113,54 @@ export default function ChunkedTranscribePage() {
     }
   };
 
-  // アップロード処理は既にサーバーサイドで完了しているため、スキップ
+  // Cloud Storageへのアップロード処理
   const handleUploadChunks = async () => {
-    console.log('Upload already completed on server side, skipping...');
-    setCurrentStep('transcribe');
-    setProgress(100);
+    console.log('=== handleUploadChunks START ===');
+    console.log('handleUploadChunks called, chunks:', chunks.length);
+
+    if (chunks.length === 0) {
+      setError('分割されたチャンクがありません');
+      return;
+    }
+
+    console.log('Starting upload process...');
+    setIsProcessing(true);
+    setError('');
+    setCurrentStep('upload');
+    setProgress(0);
+
+    try {
+      // 進捗コールバック関数
+      const onUploadProgress = (progressInfo: { current: number; total: number; percentage: number }) => {
+        console.log(`Upload Progress: ${progressInfo.current}/${progressInfo.total} (${progressInfo.percentage}%)`);
+        setProgress(progressInfo.percentage);
+      };
+
+      console.log('Calling uploadChunksWithSignedUrl...');
+      
+      // 署名付きURL方式でアップロード
+      const results = await uploadChunksWithSignedUrl(chunks, userId, sessionId, onUploadProgress);
+      
+      console.log('Upload results:', results);
+      setUploadResults(results);
+      setCurrentStep('transcribe');
+      setProgress(100);
+      
+      console.log(`Successfully uploaded ${results.length} chunks`);
+      
+    } catch (error) {
+      console.error('Error uploading chunks:', error);
+      setError(error instanceof Error ? error.message : 'チャンクのアップロードに失敗しました');
+    } finally {
+      console.log('Setting isProcessing to false');
+      setIsProcessing(false);
+    }
   };
 
   // 文字起こし処理の開始
   const handleStartTranscription = async () => {
-    if (chunks.length === 0) {
-      setError('処理されたチャンクがありません');
+    if (uploadResults.length === 0) {
+      setError('アップロードされたチャンクがありません');
       return;
     }
 
@@ -139,11 +179,11 @@ export default function ChunkedTranscribePage() {
         body: JSON.stringify({
           userId,
           sessionId,
-          chunks: chunks.map(chunk => ({
-            id: chunk.id,
-            startTime: chunk.startTime,
-            endTime: chunk.endTime,
-            duration: chunk.duration
+          chunks: uploadResults.map(result => ({
+            id: result.id,
+            startTime: result.startTime,
+            endTime: result.endTime,
+            duration: result.duration
           }))
         })
       });
@@ -241,18 +281,18 @@ export default function ChunkedTranscribePage() {
                       disabled={isProcessing}
                       className="mt-4 w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {isProcessing ? '処理中...' : '音声を分割・アップロード'}
+                      {isProcessing ? '分割中...' : '音声を分割'}
                     </button>
                   </div>
                 )}
               </div>
             )}
 
-            {/* ステップ2: 分割・アップロード */}
+            {/* ステップ2: 分割 */}
             {currentStep === 'split' && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-4">音声ファイルを処理中...</h3>
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">音声ファイルを分割中...</h3>
                   <div className="bg-gray-200 rounded-full h-2 mb-4">
                     <div 
                       className="bg-blue-600 h-2 rounded-full transition-all duration-300"
@@ -260,17 +300,17 @@ export default function ChunkedTranscribePage() {
                     ></div>
                   </div>
                   <p className="text-sm text-gray-600">
-                    サーバーサイドで音声ファイルをMP3チャンクに分割し、Cloud Storageにアップロードしています...
+                    音声ファイルをチャンクに分割しています...
                   </p>
                 </div>
               </div>
             )}
 
-            {/* ステップ3: 文字起こし */}
-            {currentStep === 'transcribe' && (
+            {/* ステップ3: アップロード */}
+            {currentStep === 'upload' && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-4">音声処理完了</h3>
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">分割完了</h3>
                   <div className="bg-green-50 border border-green-200 rounded-md p-4 mb-4">
                     <div className="flex">
                       <div className="flex-shrink-0">
@@ -280,10 +320,44 @@ export default function ChunkedTranscribePage() {
                       </div>
                       <div className="ml-3">
                         <h3 className="text-sm font-medium text-green-800">
-                          音声分割・アップロード完了
+                          音声分割完了
                         </h3>
                         <div className="mt-2 text-sm text-green-700">
-                          <p>{chunks.length}個のチャンクが正常に処理されました</p>
+                          <p>{chunks.length}個のチャンクに分割されました</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <button
+                    onClick={handleUploadChunks}
+                    disabled={isProcessing}
+                    className="w-full bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isProcessing ? 'アップロード中...' : 'Cloud Storageにアップロード'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ステップ4: 文字起こし */}
+            {currentStep === 'transcribe' && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">アップロード完了</h3>
+                  <div className="bg-green-50 border border-green-200 rounded-md p-4 mb-4">
+                    <div className="flex">
+                      <div className="flex-shrink-0">
+                        <svg className="h-5 w-5 text-green-400" viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                      <div className="ml-3">
+                        <h3 className="text-sm font-medium text-green-800">
+                          アップロード完了
+                        </h3>
+                        <div className="mt-2 text-sm text-green-700">
+                          <p>{uploadResults.length}個のチャンクが正常にアップロードされました</p>
                         </div>
                       </div>
                     </div>
@@ -309,7 +383,7 @@ export default function ChunkedTranscribePage() {
               </div>
             )}
 
-            {/* ステップ4: 完了 */}
+            {/* ステップ5: 完了 */}
             {currentStep === 'complete' && (
               <div className="space-y-6">
                 <div className="text-center">
