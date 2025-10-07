@@ -11,8 +11,6 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@ffmpeg/ffmpeg": "^0.12.15",
-    "@ffmpeg/util": "^0.12.2",
     "@google-cloud/speech": "^6.0.0",
     "@google-cloud/storage": "^7.17.1",
     "@types/node": "20.10.5",
