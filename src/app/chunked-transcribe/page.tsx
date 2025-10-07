@@ -2,7 +2,7 @@
 
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { splitAudioFile } from '../../../lib/audio-splitter';
+import { splitAudioFile, analyzeAudioFile, splitIntoHourlyFiles } from '../../../lib/audio-splitter';
 import { uploadChunksWithSignedUrl, saveSessionInfo } from '../../../lib/cloud-storage';
 import { logChunkInfo } from '../../../lib/file-downloader';
 
@@ -39,25 +39,99 @@ export default function ChunkedTranscribePage() {
   const [chunks, setChunks] = useState<AudioChunk[]>([]);
   const [uploadResults, setUploadResults] = useState<UploadResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
-  const [currentStep, setCurrentStep] = useState<'select' | 'split' | 'upload' | 'transcribe' | 'complete'>('select');
+  const [currentStep, setCurrentStep] = useState<'select' | 'analyze' | 'hourly-split' | 'split' | 'upload' | 'transcribe' | 'complete'>('select');
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string>('');
   const [userId] = useState<string>('user_' + Date.now()); // 簡易的なユーザーID
   const [sessionId] = useState<string>('session_' + Date.now()); // 簡易的なセッションID
+  const [fileAnalysis, setFileAnalysis] = useState<{
+    duration: number;
+    durationHours: number;
+    fileSize: number;
+    needsHourlySplit: boolean;
+    recommendedChunkDuration: number;
+    metadata: any;
+  } | null>(null);
+  const [hourlyFiles, setHourlyFiles] = useState<any[]>([]);
+  const [currentHourlyFile, setCurrentHourlyFile] = useState<number>(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
   // ファイル選択時の処理
-  const handleFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
     console.log('File select triggered:', event.target.files);
     const file = event.target.files?.[0];
     if (file) {
       console.log('File selected:', file.name, file.size, file.type);
       setAudioFile(file);
       setError('');
-      setCurrentStep('select');
-      console.log('File selected, currentStep set to:', 'select');
+      
+      // ファイル分析を実行
+      try {
+        setIsProcessing(true);
+        setCurrentStep('analyze');
+        const analysis = await analyzeAudioFile(file);
+        setFileAnalysis(analysis as any);
+        console.log('File analysis:', analysis);
+        
+        if ((analysis as any).needsHourlySplit) {
+          setCurrentStep('hourly-split');
+        } else {
+          setCurrentStep('split');
+        }
+      } catch (error) {
+        console.error('File analysis failed:', error);
+        setError('ファイルの分析に失敗しました');
+      } finally {
+        setIsProcessing(false);
+      }
     }
+  };
+
+  // 1時間ごとの分割処理
+  const handleHourlySplit = async () => {
+    if (!audioFile) return;
+    
+    try {
+      setIsProcessing(true);
+      setCurrentStep('hourly-split');
+      
+      const onProgress = (progressInfo: { current: number; total: number; percentage: number; message: string }) => {
+        console.log(`Hourly Split Progress: ${progressInfo.message} (${progressInfo.percentage}%)`);
+        setProgress(progressInfo.percentage);
+      };
+      
+      const files = await splitIntoHourlyFiles(audioFile, onProgress);
+      setHourlyFiles(files);
+      setCurrentStep('split');
+      setProgress(100);
+      
+      console.log(`Successfully created ${files.length} hourly files`);
+    } catch (error) {
+      console.error('Hourly split failed:', error);
+      setError('時間分割に失敗しました');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  // 時間分割ファイルのダウンロード
+  const downloadHourlyFile = (file: any) => {
+    const url = URL.createObjectURL(file.file);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = file.file.name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // 時間分割ファイルを選択してチャンク分割
+  const handleSelectHourlyFile = (file: any, index: number) => {
+    setCurrentHourlyFile(index);
+    setAudioFile(file.file);
+    setCurrentStep('split');
   };
 
   // 音声ファイルの分割処理
@@ -268,28 +342,126 @@ export default function ChunkedTranscribePage() {
                   />
                 </div>
 
-                {audioFile && (
-                  <div className="bg-gray-50 p-4 rounded-md">
-                    <h3 className="text-sm font-medium text-gray-900 mb-2">選択されたファイル</h3>
-                    <div className="text-sm text-gray-600">
-                      <p><strong>ファイル名:</strong> {audioFile.name}</p>
-                      <p><strong>サイズ:</strong> {(audioFile.size / 1024 / 1024).toFixed(2)} MB</p>
-                      <p><strong>タイプ:</strong> {audioFile.type}</p>
-                    </div>
-                    <button
-                      onClick={handleSplitAudio}
-                      disabled={isProcessing}
-                      className="mt-4 w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      {isProcessing ? '分割中...' : '音声を分割'}
-                    </button>
-                  </div>
-                )}
               </div>
             )}
 
-            {/* ステップ2: 分割 */}
-            {currentStep === 'split' && (
+            {/* ステップ2: ファイル分析 */}
+            {currentStep === 'analyze' && (
+              <div className="space-y-6">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+                  <p className="mt-2 text-sm text-gray-600">ファイルを分析中...</p>
+                </div>
+              </div>
+            )}
+
+            {/* ステップ3: 時間分割が必要な場合 */}
+            {currentStep === 'hourly-split' && fileAnalysis && (
+              <div className="space-y-6">
+                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
+                  <div className="flex">
+                    <div className="flex-shrink-0">
+                      <svg className="h-5 w-5 text-yellow-400" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                      </svg>
+                    </div>
+                    <div className="ml-3">
+                      <h3 className="text-sm font-medium text-yellow-800">
+                        長時間ファイルが検出されました
+                      </h3>
+                      <div className="mt-2 text-sm text-yellow-700">
+                        <p>ファイルの長さ: <strong>{fileAnalysis.durationHours.toFixed(1)}時間</strong></p>
+                        <p>メモリ制限を回避するため、1時間ごとに分割することをお勧めします。</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <button
+                    onClick={handleHourlySplit}
+                    disabled={isProcessing}
+                    className="w-full bg-yellow-600 text-white py-2 px-4 rounded-md hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isProcessing ? '分割中...' : '1時間ごとに分割してダウンロード'}
+                  </button>
+                  
+                  <button
+                    onClick={() => setCurrentStep('split')}
+                    className="w-full bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700"
+                  >
+                    そのままチャンク分割を実行（メモリ不足の可能性あり）
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ステップ4: 時間分割ファイル選択 */}
+            {currentStep === 'split' && hourlyFiles.length > 0 && (
+              <div className="space-y-6">
+                <div className="bg-green-50 border border-green-200 rounded-md p-4">
+                  <h3 className="text-sm font-medium text-green-800 mb-2">
+                    時間分割ファイルが作成されました
+                  </h3>
+                  <p className="text-sm text-green-700">
+                    {hourlyFiles.length}個のファイルが作成されました。各ファイルを個別にチャンク分割してアップロードしてください。
+                  </p>
+                </div>
+
+                <div className="space-y-4">
+                  {hourlyFiles.map((file, index) => (
+                    <div key={index} className="bg-gray-50 p-4 rounded-md">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h4 className="text-sm font-medium text-gray-900">{file.file.name}</h4>
+                          <p className="text-sm text-gray-600">
+                            時間: {Math.floor(file.startTime / 60)}分 - {Math.floor(file.endTime / 60)}分
+                          </p>
+                        </div>
+                        <div className="space-x-2">
+                          <button
+                            onClick={() => downloadHourlyFile(file)}
+                            className="text-sm bg-blue-600 text-white py-1 px-3 rounded hover:bg-blue-700"
+                          >
+                            ダウンロード
+                          </button>
+                          <button
+                            onClick={() => handleSelectHourlyFile(file, index)}
+                            className="text-sm bg-green-600 text-white py-1 px-3 rounded hover:bg-green-700"
+                          >
+                            チャンク分割
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* ステップ5: 通常のチャンク分割 */}
+            {currentStep === 'split' && hourlyFiles.length === 0 && audioFile && (
+              <div className="space-y-6">
+                <div className="bg-gray-50 p-4 rounded-md">
+                  <h3 className="text-sm font-medium text-gray-900 mb-2">選択されたファイル</h3>
+                  <div className="text-sm text-gray-600">
+                    <p><strong>ファイル名:</strong> {audioFile.name}</p>
+                    <p><strong>サイズ:</strong> {(audioFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                    <p><strong>タイプ:</strong> {audioFile.type}</p>
+                  </div>
+                  <button
+                    onClick={handleSplitAudio}
+                    disabled={isProcessing}
+                    className="mt-4 w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isProcessing ? '分割中...' : '音声を分割'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* ステップ6: 分割処理中 */}
+            {currentStep === 'split' && isProcessing && (
               <div className="space-y-6">
                 <div>
                   <h3 className="text-lg font-medium text-gray-900 mb-4">音声ファイルを分割中...</h3>
