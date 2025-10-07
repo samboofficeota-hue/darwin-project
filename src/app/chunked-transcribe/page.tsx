@@ -54,6 +54,7 @@ export default function ChunkedTranscribePage() {
   } | null>(null);
   const [hourlyFiles, setHourlyFiles] = useState<any[]>([]);
   const [currentHourlyFile, setCurrentHourlyFile] = useState<number>(0);
+  const [isCancelled, setIsCancelled] = useState<boolean>(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
@@ -94,14 +95,27 @@ export default function ChunkedTranscribePage() {
     
     try {
       setIsProcessing(true);
+      setIsCancelled(false);
       setCurrentStep('hourly-split');
+      setError('');
       
       const onProgress = (progressInfo: { current: number; total: number; percentage: number; message: string }) => {
+        if (isCancelled) return; // キャンセルされた場合は処理を停止
         console.log(`Hourly Split Progress: ${progressInfo.message} (${progressInfo.percentage}%)`);
         setProgress(progressInfo.percentage);
       };
       
-      const files = await splitIntoHourlyFiles(audioFile, onProgress);
+      const files = await splitIntoHourlyFiles(audioFile, onProgress, sessionId);
+      
+      if (isCancelled) {
+        console.log('Hourly split cancelled by user');
+        return;
+      }
+      
+      if (files.length === 0) {
+        throw new Error('分割されたファイルがありません。ファイルが大きすぎる可能性があります。');
+      }
+      
       setHourlyFiles(files);
       setCurrentStep('split');
       setProgress(100);
@@ -109,10 +123,18 @@ export default function ChunkedTranscribePage() {
       console.log(`Successfully created ${files.length} hourly files`);
     } catch (error) {
       console.error('Hourly split failed:', error);
-      setError('時間分割に失敗しました');
+      setError(`時間分割に失敗しました: ${error instanceof Error ? error.message : '不明なエラー'}`);
+      setCurrentStep('hourly-split'); // エラー時は元のステップに戻す
     } finally {
       setIsProcessing(false);
     }
+  };
+
+  // キャンセル処理
+  const handleCancel = () => {
+    setIsCancelled(true);
+    setIsProcessing(false);
+    setError('処理がキャンセルされました');
   };
 
   // 時間分割ファイルのダウンロード
@@ -383,8 +405,17 @@ export default function ChunkedTranscribePage() {
                     disabled={isProcessing}
                     className="w-full bg-yellow-600 text-white py-2 px-4 rounded-md hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {isProcessing ? '分割中...' : '1時間ごとに分割してダウンロード'}
+                    {isProcessing ? '録音中...' : '30分ごとに分割してダウンロード'}
                   </button>
+                  
+                  {isProcessing && (
+                    <button
+                      onClick={handleCancel}
+                      className="w-full bg-red-600 text-white py-2 px-4 rounded-md hover:bg-red-700"
+                    >
+                      キャンセル
+                    </button>
+                  )}
                   
                   <button
                     onClick={() => setCurrentStep('split')}
@@ -409,16 +440,29 @@ export default function ChunkedTranscribePage() {
                 </div>
 
                 <div className="space-y-4">
-                  {hourlyFiles.map((file, index) => (
+                  {hourlyFiles
+                    .sort((a, b) => a.segmentIndex - b.segmentIndex) // 連番順にソート
+                    .map((file, index) => (
                     <div key={index} className="bg-gray-50 p-4 rounded-md">
                       <div className="flex items-center justify-between">
-                        <div>
+                        <div className="flex-1">
                           <h4 className="text-sm font-medium text-gray-900">{file.file.name}</h4>
-                          <p className="text-sm text-gray-600">
-                            時間: {Math.floor(file.startTime / 60)}分 - {Math.floor(file.endTime / 60)}分
-                          </p>
+                          <div className="text-sm text-gray-600 space-y-1">
+                            <p>
+                              <strong>セグメント:</strong> {file.segmentIndex}/{file.totalSegments}
+                            </p>
+                            <p>
+                              <strong>時間:</strong> {Math.floor(file.startTime / 60)}分 - {Math.floor(file.endTime / 60)}分
+                            </p>
+                            <p>
+                              <strong>セッションID:</strong> {file.sessionId}
+                            </p>
+                            <p>
+                              <strong>元ファイル:</strong> {file.originalFileName}
+                            </p>
+                          </div>
                         </div>
-                        <div className="space-x-2">
+                        <div className="space-x-2 ml-4">
                           <button
                             onClick={() => downloadHourlyFile(file)}
                             className="text-sm bg-blue-600 text-white py-1 px-3 rounded hover:bg-blue-700"
