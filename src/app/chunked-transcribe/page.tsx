@@ -405,7 +405,7 @@ export default function ChunkedTranscribePage() {
                     disabled={isProcessing}
                     className="w-full bg-yellow-600 text-white py-2 px-4 rounded-md hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {isProcessing ? '準備中...' : '分割ファイルの準備（手動分割案内）'}
+                    {isProcessing ? '分割中...' : '30分ごとに自動分割してダウンロード'}
                   </button>
                   
                   {isProcessing && (
@@ -427,72 +427,58 @@ export default function ChunkedTranscribePage() {
               </div>
             )}
 
-            {/* ステップ4: 手動分割案内 */}
+            {/* ステップ4: 自動分割完了 */}
             {currentStep === 'split' && hourlyFiles.length > 0 && (
               <div className="space-y-6">
-                <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
-                  <h3 className="text-sm font-medium text-blue-800 mb-2">
-                    手動分割が必要です
+                <div className="bg-green-50 border border-green-200 rounded-md p-4">
+                  <h3 className="text-sm font-medium text-green-800 mb-2">
+                    自動分割が完了しました
                   </h3>
-                  <p className="text-sm text-blue-700 mb-3">
-                    1.6時間のファイルは大きすぎるため、手動で分割する必要があります。
+                  <p className="text-sm text-green-700">
+                    {hourlyFiles.length}個のファイルが作成されました。各ファイルを個別にチャンク分割してアップロードしてください。
                   </p>
-                  <div className="text-sm text-blue-700 space-y-2">
-                    <p><strong>推奨分割方法:</strong></p>
-                    <ul className="list-disc list-inside ml-4 space-y-1">
-                      <li>オンライン音声分割ツール（例: Audacity, Online Audio Cutter）</li>
-                      <li>FFmpegコマンド: <code className="bg-gray-100 px-1 rounded">ffmpeg -i input.mp3 -f segment -segment_time 1800 output_%03d.mp3</code></li>
-                      <li>スマートフォンアプリの音声編集機能</li>
-                    </ul>
-                  </div>
-                </div>
-
-                <div className="bg-yellow-50 border border-yellow-200 rounded-md p-4">
-                  <h3 className="text-sm font-medium text-yellow-800 mb-2">
-                    分割ファイルの命名規則
-                  </h3>
-                  <p className="text-sm text-yellow-700 mb-2">
-                    以下の命名規則で分割してください：
-                  </p>
-                  <div className="text-sm text-yellow-700 space-y-1">
-                    {hourlyFiles
-                      .sort((a, b) => a.segmentIndex - b.segmentIndex)
-                      .map((file, index) => (
-                        <p key={index} className="font-mono bg-gray-100 px-2 py-1 rounded">
-                          {file.file.name}
-                        </p>
-                      ))}
-                  </div>
                 </div>
 
                 <div className="space-y-4">
-                  <h3 className="text-sm font-medium text-gray-900">分割後のファイルをアップロード</h3>
-                  <p className="text-sm text-gray-600">
-                    手動で分割したファイルを以下のボタンからアップロードしてください。
-                  </p>
-                  
-                  <div className="flex space-x-4">
-                    <button
-                      onClick={() => {
-                        // ファイル選択をリセット
-                        setHourlyFiles([]);
-                        setCurrentStep('select');
-                        if (fileInputRef.current) {
-                          fileInputRef.current.value = '';
-                        }
-                      }}
-                      className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700"
-                    >
-                      分割ファイルを選択
-                    </button>
-                    
-                    <button
-                      onClick={() => setCurrentStep('select')}
-                      className="flex-1 bg-gray-600 text-white py-2 px-4 rounded-md hover:bg-gray-700"
-                    >
-                      最初からやり直す
-                    </button>
-                  </div>
+                  {hourlyFiles
+                    .sort((a, b) => a.segmentIndex - b.segmentIndex) // 連番順にソート
+                    .map((file, index) => (
+                    <div key={index} className="bg-gray-50 p-4 rounded-md">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <h4 className="text-sm font-medium text-gray-900">{file.file.name}</h4>
+                          <div className="text-sm text-gray-600 space-y-1">
+                            <p>
+                              <strong>セグメント:</strong> {file.segmentIndex}/{file.totalSegments}
+                            </p>
+                            <p>
+                              <strong>時間:</strong> {Math.floor(file.startTime / 60)}分 - {Math.floor(file.endTime / 60)}分
+                            </p>
+                            <p>
+                              <strong>セッションID:</strong> {file.sessionId}
+                            </p>
+                            <p>
+                              <strong>元ファイル:</strong> {file.originalFileName}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="space-x-2 ml-4">
+                          <button
+                            onClick={() => downloadHourlyFile(file)}
+                            className="text-sm bg-blue-600 text-white py-1 px-3 rounded hover:bg-blue-700"
+                          >
+                            ダウンロード
+                          </button>
+                          <button
+                            onClick={() => handleSelectHourlyFile(file, index)}
+                            className="text-sm bg-green-600 text-white py-1 px-3 rounded hover:bg-green-700"
+                          >
+                            チャンク分割
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
