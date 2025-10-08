@@ -6,6 +6,8 @@
 import fs from 'fs';
 import path from 'path';
 import { Readable } from 'stream';
+import { VimeoAPIClient, fetchWithTimeout } from '../../lib/http-client.js';
+import { AudioProcessor, FallbackAudioProcessor } from '../../lib/audio-processor.js';
 
 export const config = {
   api: {
@@ -61,14 +63,20 @@ export default async function handler(req, res) {
     
     // 指定された時間範囲の音声を抽出
     let extractedAudio;
+    const audioProcessor = new AudioProcessor();
+    
     try {
-      extractedAudio = await extractAudioSegment(audioBuffer, startTime, duration);
+      extractedAudio = await audioProcessor.extractAudioSegment(audioBuffer, startTime, duration);
       console.log(`Extracted audio segment: ${extractedAudio.length} bytes`);
     } catch (extractError) {
       console.warn('FFmpeg extraction failed, using fallback method:', extractError.message);
       // フォールバック: 簡易的な抽出方法
-      extractedAudio = await extractAudioSegmentFallback(audioBuffer, startTime, duration);
+      const fallbackProcessor = new FallbackAudioProcessor();
+      extractedAudio = fallbackProcessor.extractAudioSegmentFallback(audioBuffer, startTime, duration);
       console.log(`Fallback extracted audio segment: ${extractedAudio.length} bytes`);
+    } finally {
+      // クリーンアップ
+      audioProcessor.cleanup();
     }
 
     // 音声データをBase64エンコードして返す
@@ -103,210 +111,175 @@ function extractVideoId(url) {
 }
 
 /**
- * Vimeo APIから動画のダウンロードリンクを取得（レート制限対応）
+ * Vimeo APIから動画のダウンロードリンクを取得（統一されたHTTPクライアント使用）
  */
 async function getVimeoDownloadLinks(videoId) {
-  const maxRetries = 3;
-  const baseDelay = 1000; // 1秒
+  try {
+    console.log(`Getting Vimeo download links for video ${videoId}`);
 
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      if (!process.env.VIMEO_ACCESS_TOKEN) {
-        throw new Error('Vimeo APIトークンが設定されていません');
-      }
-
-      console.log(`Vimeo API request attempt ${attempt} for video ${videoId}`);
-
-      // Vimeo APIで動画の詳細情報を取得
-      const response = await fetch(`https://api.vimeo.com/videos/${videoId}`, {
-        headers: {
-          'Authorization': `Bearer ${process.env.VIMEO_ACCESS_TOKEN}`,
-          'Accept': 'application/vnd.vimeo.*+json;version=3.4'
-        }
-      });
-
-      if (response.status === 429) {
-        // レート制限エラーの場合
-        const retryAfter = response.headers.get('Retry-After');
-        const delay = retryAfter ? parseInt(retryAfter) * 1000 : baseDelay * Math.pow(2, attempt - 1);
-        
-        console.log(`Rate limited. Waiting ${delay}ms before retry ${attempt}/${maxRetries}`);
-        
-        if (attempt < maxRetries) {
-          await new Promise(resolve => setTimeout(resolve, delay));
-          continue;
-        } else {
-          throw new Error(`Vimeo API rate limit exceeded after ${maxRetries} attempts`);
-        }
-      }
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error(`Vimeo API error: ${response.status} - ${errorText}`);
-        
-        if (response.status === 403) {
-          throw new Error('動画へのアクセスが制限されています。動画が非公開または認証が必要です。');
-        } else if (response.status === 404) {
-          throw new Error('動画が見つかりません。URLを確認してください。');
-        } else if (response.status === 401) {
-          throw new Error('Vimeo APIトークンが無効です。');
-        } else {
-          throw new Error(`Vimeo API error: ${response.status} - ${errorText}`);
-        }
-      }
-
-      const videoData = await response.json();
-      
-      // デバッグ: レスポンス構造を確認
-      console.log('Vimeo API response structure:');
-      console.log('- Has files:', !!videoData.files);
-      console.log('- Has download:', !!videoData.download);
-      console.log('- Has play:', !!videoData.play);
-      console.log('- Has embed:', !!videoData.embed);
-      
-      // 動画ファイルの情報を取得（複数のソースを確認）
-      const files = videoData.files || [];
-      const downloadFiles = videoData.download || [];
-      const playFiles = videoData.play || {};
-      const allFiles = [...files, ...downloadFiles];
-      
-      // playオブジェクトからもファイル情報を取得
-      if (playFiles.progressive && Array.isArray(playFiles.progressive)) {
-        allFiles.push(...playFiles.progressive);
-        console.log('Added progressive files from play object:', playFiles.progressive.length);
-      }
-      
-      console.log(`Found ${files.length} files and ${downloadFiles.length} download files`);
-      console.log('Files:', files.map(f => ({ type: f.type, quality: f.quality, size: f.size })));
-      console.log('Download files:', downloadFiles.map(f => ({ type: f.type, quality: f.quality, size: f.size })));
-      
-      // 音声付きのファイルを探す（改善された検索ロジック）
-      let audioFile = null;
-      
-      // 1. HLS品質のMP4ファイルを優先
+    const vimeoClient = new VimeoAPIClient();
+    const videoData = await vimeoClient.getVideo(videoId);
+    
+    // デバッグ: レスポンス構造を確認
+    console.log('Vimeo API response structure:');
+    console.log('- Has files:', !!videoData.files);
+    console.log('- Has download:', !!videoData.download);
+    console.log('- Has play:', !!videoData.play);
+    console.log('- Has embed:', !!videoData.embed);
+    
+    // 動画ファイルの情報を取得（複数のソースを確認）
+    const files = videoData.files || [];
+    const downloadFiles = videoData.download || [];
+    const playFiles = videoData.play || {};
+    const allFiles = [...files, ...downloadFiles];
+    
+    // playオブジェクトからもファイル情報を取得
+    if (playFiles.progressive && Array.isArray(playFiles.progressive)) {
+      allFiles.push(...playFiles.progressive);
+      console.log('Added progressive files from play object:', playFiles.progressive.length);
+    }
+    
+    console.log(`Found ${files.length} files and ${downloadFiles.length} download files`);
+    console.log('Files:', files.map(f => ({ type: f.type, quality: f.quality, size: f.size })));
+    console.log('Download files:', downloadFiles.map(f => ({ type: f.type, quality: f.quality, size: f.size })));
+    
+    // 音声付きのファイルを探す（改善された検索ロジック）
+    let audioFile = null;
+    
+    // 1. HLS品質のMP4ファイルを優先
+    audioFile = allFiles.find(file => 
+      file.type === 'video/mp4' && 
+      file.quality === 'hls' && 
+      file.size > 0
+    );
+    
+    // 2. HLSが見つからない場合は、高品質のMP4を探す
+    if (!audioFile) {
       audioFile = allFiles.find(file => 
         file.type === 'video/mp4' && 
-        file.quality === 'hls' && 
+        file.quality && 
+        (file.quality === 'hd' || file.quality === 'sd') &&
         file.size > 0
       );
-      
-      // 2. HLSが見つからない場合は、高品質のMP4を探す
-      if (!audioFile) {
-        audioFile = allFiles.find(file => 
-          file.type === 'video/mp4' && 
-          file.quality && 
-          (file.quality === 'hd' || file.quality === 'sd') &&
-          file.size > 0
-        );
-      }
-      
-      // 3. 品質指定なしのMP4ファイルを探す
-      if (!audioFile) {
-        audioFile = allFiles.find(file => 
-          file.type === 'video/mp4' && 
-          file.size > 0
-        );
-      }
-      
-      // 4. 他の動画形式を探す
-      if (!audioFile) {
-        audioFile = allFiles.find(file => 
-          file.type && 
-          (file.type.includes('video') || file.type.includes('mp4')) && 
-          file.size > 0
-        );
-      }
-      
-      // 5. サイズが0でないファイルを探す
-      if (!audioFile) {
-        audioFile = allFiles.find(file => 
-          file.size > 0
-        );
-      }
-      
-      // 6. 最後の手段：最初のファイルを使用
-      if (!audioFile && allFiles.length > 0) {
-        audioFile = allFiles[0];
-        console.log('Using first available file as fallback:', audioFile);
-      }
-      
-      // デバッグ情報を追加
-      console.log('File search results:');
-      console.log('- Total files found:', allFiles.length);
-      console.log('- Selected file:', audioFile ? {
-        type: audioFile.type,
-        quality: audioFile.quality,
-        size: audioFile.size,
-        hasLink: !!audioFile.link
-      } : 'None');
-
-      if (!audioFile) {
-        console.error('No files found in Vimeo response. Full response structure:');
-        console.error(JSON.stringify(videoData, null, 2));
-        
-        // 最後の手段：playオブジェクトから直接リンクを取得
-        if (playFiles.progressive && playFiles.progressive.length > 0) {
-          const firstProgressive = playFiles.progressive[0];
-          if (firstProgressive.url) {
-            console.log('Using progressive file as fallback:', firstProgressive);
-            audioFile = {
-              link: firstProgressive.url,
-              type: firstProgressive.mime || 'video/mp4',
-              quality: firstProgressive.quality || 'unknown',
-              size: firstProgressive.size || 0
-            };
-          }
-        }
-        
-        if (!audioFile) {
-          throw new Error('音声付きの動画ファイルが見つかりません。動画が非公開または制限されている可能性があります。');
-        }
-      }
-
-      console.log('Selected audio file:', { type: audioFile.type, quality: audioFile.quality, size: audioFile.size });
-
-      return {
-        audioUrl: audioFile.link,
-        format: 'mp4',
-        size: audioFile.size,
-        quality: audioFile.quality
-      };
-
-    } catch (error) {
-      console.error(`Vimeo API error (attempt ${attempt}):`, error);
-      
-      if (attempt === maxRetries) {
-        throw error;
-      }
-      
-      // 指数バックオフで待機
-      const delay = baseDelay * Math.pow(2, attempt - 1);
-      console.log(`Waiting ${delay}ms before retry ${attempt + 1}/${maxRetries}`);
-      await new Promise(resolve => setTimeout(resolve, delay));
     }
-  }
-}
-
-/**
- * Vimeoから音声ファイルをダウンロード
- */
-async function downloadVimeoAudio(audioUrl) {
-  try {
-    const response = await fetch(audioUrl);
     
-    if (!response.ok) {
-      throw new Error(`Audio download failed: ${response.status}`);
+    // 3. 品質指定なしのMP4ファイルを探す
+    if (!audioFile) {
+      audioFile = allFiles.find(file => 
+        file.type === 'video/mp4' && 
+        file.size > 0
+      );
+    }
+    
+    // 4. 他の動画形式を探す
+    if (!audioFile) {
+      audioFile = allFiles.find(file => 
+        file.type && 
+        (file.type.includes('video') || file.type.includes('mp4')) && 
+        file.size > 0
+      );
+    }
+    
+    // 5. サイズが0でないファイルを探す
+    if (!audioFile) {
+      audioFile = allFiles.find(file => 
+        file.size > 0
+      );
+    }
+    
+    // 6. 最後の手段：最初のファイルを使用
+    if (!audioFile && allFiles.length > 0) {
+      audioFile = allFiles[0];
+      console.log('Using first available file as fallback:', audioFile);
+    }
+    
+    // デバッグ情報を追加
+    console.log('File search results:');
+    console.log('- Total files found:', allFiles.length);
+    console.log('- Selected file:', audioFile ? {
+      type: audioFile.type,
+      quality: audioFile.quality,
+      size: audioFile.size,
+      hasLink: !!audioFile.link
+    } : 'None');
+
+    if (!audioFile) {
+      console.error('No files found in Vimeo response. Full response structure:');
+      console.error(JSON.stringify(videoData, null, 2));
+      
+      // 最後の手段：playオブジェクトから直接リンクを取得
+      if (playFiles.progressive && playFiles.progressive.length > 0) {
+        const firstProgressive = playFiles.progressive[0];
+        if (firstProgressive.url) {
+          console.log('Using progressive file as fallback:', firstProgressive);
+          audioFile = {
+            link: firstProgressive.url,
+            type: firstProgressive.mime || 'video/mp4',
+            quality: firstProgressive.quality || 'unknown',
+            size: firstProgressive.size || 0
+          };
+        }
+      }
+      
+      if (!audioFile) {
+        throw new Error('音声付きの動画ファイルが見つかりません。動画が非公開または制限されている可能性があります。');
+      }
     }
 
-    const arrayBuffer = await response.arrayBuffer();
-    return Buffer.from(arrayBuffer);
+    console.log('Selected audio file:', { type: audioFile.type, quality: audioFile.quality, size: audioFile.size });
+
+    return {
+      audioUrl: audioFile.link,
+      format: 'mp4',
+      size: audioFile.size,
+      quality: audioFile.quality
+    };
 
   } catch (error) {
-    console.error('Error downloading Vimeo audio:', error);
+    console.error('Error getting Vimeo download links:', error);
     throw error;
   }
 }
 
+/**
+ * Vimeoから音声ファイルをダウンロード（タイムアウト付き）
+ */
+async function downloadVimeoAudio(audioUrl) {
+  try {
+    console.log(`Downloading audio from: ${audioUrl}`);
+    
+    const response = await fetchWithTimeout(audioUrl, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Darwin-Project/1.0'
+      }
+    }, 120000); // 2分タイムアウト
+    
+    if (!response.ok) {
+      throw new Error(`Audio download failed: ${response.status} ${response.statusText}`);
+    }
+
+    const contentLength = response.headers.get('content-length');
+    if (contentLength) {
+      console.log(`Downloading ${Math.round(parseInt(contentLength) / 1024 / 1024 * 100) / 100} MB`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    
+    console.log(`Downloaded ${Math.round(buffer.length / 1024 / 1024 * 100) / 100} MB successfully`);
+    return buffer;
+
+  } catch (error) {
+    console.error('Error downloading Vimeo audio:', error);
+    if (error.message.includes('timeout')) {
+      throw new Error('音声ダウンロードがタイムアウトしました。ファイルサイズが大きすぎる可能性があります。');
+    }
+    throw error;
+  }
+}
+
+<<<<<<< Current (Your changes)
 /**
  * FFmpegを使用した正確な音声セグメント抽出
  * 他の事例を参考にした改善実装
@@ -442,3 +415,5 @@ async function extractAudioSegmentFallback(audioBuffer, startTime, duration) {
     return audioBuffer;
   }
 }
+=======
+>>>>>>> Incoming (Background Agent changes)

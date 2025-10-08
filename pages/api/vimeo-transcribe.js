@@ -5,6 +5,14 @@
 
 import crypto from 'crypto';
 import { saveJobState, loadJobState, updateJobState } from '../../lib/storage.js';
+import { getConfig } from '../../lib/config.js';
+import { 
+  InputValidator, 
+  generateSecureJobId, 
+  validateRequest,
+  PrivacyProtection 
+} from '../../lib/security.js';
+import { performanceMonitor } from '../../lib/monitoring.js';
 
 export const config = {
   api: {
@@ -15,10 +23,17 @@ export const config = {
 };
 
 export default async function handler(req, res) {
-  // CORS設定
+  const operationId = `vimeo-transcribe-${Date.now()}`;
+  performanceMonitor.startTimer(operationId);
+  performanceMonitor.recordRequest();
+
+  // セキュリティヘッダー設定
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
 
   if (req.method === 'OPTIONS') {
     res.status(200).end();
@@ -26,26 +41,71 @@ export default async function handler(req, res) {
   }
 
   if (req.method !== 'POST') {
+    performanceMonitor.endTimer(operationId, { error: 'Method not allowed' });
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
   try {
+    // リクエスト検証
+    validateRequest(req);
+    
     const { vimeoUrl, resume_job_id, lecture_info } = req.body;
 
     if (!vimeoUrl && !resume_job_id) {
       return res.status(400).json({ error: 'Vimeo URLまたは再開ジョブIDが必要です' });
     }
 
+    // 入力値の検証とサニタイズ
+    if (vimeoUrl) {
+      InputValidator.validateVimeoUrl(vimeoUrl);
+    }
+    
+    if (resume_job_id) {
+      InputValidator.validateJobId(resume_job_id);
+    }
+    
+    if (lecture_info) {
+      InputValidator.validateLectureInfo(lecture_info);
+      // 個人情報をサニタイズ
+      lecture_info.theme = InputValidator.sanitizeString(lecture_info.theme);
+      if (lecture_info.speaker) {
+        lecture_info.speaker.name = InputValidator.sanitizeString(lecture_info.speaker.name);
+        lecture_info.speaker.title = InputValidator.sanitizeString(lecture_info.speaker.title);
+        lecture_info.speaker.bio = InputValidator.sanitizeString(lecture_info.speaker.bio);
+      }
+      if (lecture_info.description) {
+        lecture_info.description = InputValidator.sanitizeString(lecture_info.description);
+      }
+    }
+
     // 既存のジョブを再開する場合
     if (resume_job_id) {
-      return await resumeTranscriptionJob(resume_job_id, res);
+      const result = await resumeTranscriptionJob(resume_job_id, res);
+      performanceMonitor.endTimer(operationId, { 
+        type: 'resume_job', 
+        jobId: resume_job_id,
+        success: true 
+      });
+      return result;
     }
 
     // 新しいジョブを開始
-    return await startNewTranscriptionJob(vimeoUrl, lecture_info, res);
+    const result = await startNewTranscriptionJob(vimeoUrl, lecture_info, res);
+    performanceMonitor.endTimer(operationId, { 
+      type: 'new_job', 
+      vimeoUrl: vimeoUrl ? 'provided' : 'not_provided',
+      success: true 
+    });
+    performanceMonitor.recordJob('started');
+    return result;
 
   } catch (error) {
     console.error('Vimeo transcription error:', error);
+    performanceMonitor.endTimer(operationId, { 
+      error: error.message,
+      success: false 
+    });
+    performanceMonitor.recordRequest(false);
     res.status(500).json({
       error: '文字起こしエラーが発生しました',
       details: error.message
@@ -58,8 +118,8 @@ export default async function handler(req, res) {
  */
 async function startNewTranscriptionJob(vimeoUrl, lectureInfo, res) {
   try {
-    // ジョブIDを生成
-    const jobId = generateJobId();
+    // セキュアなジョブIDを生成
+    const jobId = generateSecureJobId();
     
     // Vimeo URLの検証（validate-vimeo-url.jsのAPIを呼び出し）
     const validateResponse = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'https://darwin-project-574364248563.asia-northeast1.run.app'}/api/validate-vimeo-url`, {
@@ -106,6 +166,9 @@ async function startNewTranscriptionJob(vimeoUrl, lectureInfo, res) {
     };
 
     saveJobState(jobId, processingState);
+
+    // プライバシー保護のための自動削除スケジュール
+    PrivacyProtection.scheduleDataCleanup(jobId);
 
     // 非同期で処理を開始
     processTranscriptionAsync(jobId);
@@ -213,6 +276,9 @@ async function processTranscriptionAsync(jobId) {
       processingState.retryCount = 0;
       await saveJobState(jobId, processingState);
       
+      // パフォーマンス監視
+      performanceMonitor.recordJob('completed');
+      
       break;
 
     } catch (error) {
@@ -223,8 +289,12 @@ async function processTranscriptionAsync(jobId) {
         processingState.status = 'error';
         processingState.error = `処理に失敗しました（${maxRetries}回の試行後）: ${error.message}`;
         processingState.canResume = true;
-        await saveJobState(jobId, processingState);
         processingState.lastUpdate = new Date().toISOString();
+        await saveJobState(jobId, processingState);
+        
+        // パフォーマンス監視
+        performanceMonitor.recordJob('failed');
+        
         break;
       } else {
         const waitTime = Math.min(1000 * Math.pow(2, retryCount - 1), 30000);
@@ -242,21 +312,20 @@ async function processTranscriptionAsync(jobId) {
 // validateVimeoUrl関数は削除（validate-vimeo-url.jsのAPIを使用）
 
 /**
- * 音声をチャンクに分割（改善版）
- * 他の事例を参考にした効率的な分割処理
+ * 音声をチャンクに分割（設定ベース）
  */
 function splitAudioIntoChunks(duration) {
-  // デフォルトの動画長を設定（5分）
-  const safeDuration = duration || 300;
+  const appConfig = getConfig();
+  const safeDuration = duration || 300; // デフォルト5分
   
   // チャンクサイズを動的に調整
   let chunkDuration;
   if (safeDuration <= 600) { // 10分以下
-    chunkDuration = 120; // 2分チャンク
+    chunkDuration = appConfig.audio.chunkDuration.small;
   } else if (safeDuration <= 1800) { // 30分以下
-    chunkDuration = 300; // 5分チャンク
+    chunkDuration = appConfig.audio.chunkDuration.medium;
   } else { // 30分以上
-    chunkDuration = 600; // 10分チャンク
+    chunkDuration = appConfig.audio.chunkDuration.large;
   }
   
   const totalChunks = Math.ceil(safeDuration / chunkDuration);
@@ -297,6 +366,19 @@ async function processChunksSequentially(chunks, jobId) {
   }
   
   const results = [];
+  
+  // メモリ使用量の監視
+  function logMemoryUsage(stage) {
+    const usage = process.memoryUsage();
+    console.log(`Memory usage at ${stage}:`, {
+      rss: Math.round(usage.rss / 1024 / 1024) + 'MB',
+      heapTotal: Math.round(usage.heapTotal / 1024 / 1024) + 'MB',
+      heapUsed: Math.round(usage.heapUsed / 1024 / 1024) + 'MB',
+      external: Math.round(usage.external / 1024 / 1024) + 'MB'
+    });
+  }
+  
+  logMemoryUsage('chunk processing start');
 
   for (let i = 0; i < chunks.length; i++) {
     const chunk = chunks[i];
@@ -330,6 +412,18 @@ async function processChunksSequentially(chunks, jobId) {
         
         console.log(`Chunk ${chunk.id} completed successfully`);
         
+        // メモリ使用量をチェック
+        logMemoryUsage(`chunk ${chunk.id} completed`);
+        
+        // 高メモリ使用時はガベージコレクションを実行
+        const usage = process.memoryUsage();
+        if (usage.rss > 1024 * 1024 * 1024) { // 1GB以上
+          if (global.gc) {
+            global.gc();
+            console.log('Forced garbage collection after chunk completion');
+          }
+        }
+        
       } catch (error) {
         lastError = error;
         chunk.error = error.message;
@@ -357,6 +451,8 @@ async function processChunksSequentially(chunks, jobId) {
       console.error(`Chunk ${chunk.id} failed after ${chunk.maxRetries} attempts`);
     }
   }
+  
+  logMemoryUsage('chunk processing end');
 
   return results;
 }
@@ -545,12 +641,6 @@ async function saveLectureRecord(jobId, processingState, finalResult) {
   }
 }
 
-/**
- * ジョブIDを生成
- */
-function generateJobId() {
-  return crypto.randomBytes(16).toString('hex');
-}
 
 /**
  * 処理時間を推定

@@ -405,7 +405,7 @@ export default function ChunkedTranscribePage() {
                     disabled={isProcessing}
                     className="w-full bg-yellow-600 text-white py-2 px-4 rounded-md hover:bg-yellow-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {isProcessing ? '分割中...' : '30分ごとに自動分割してダウンロード'}
+                    {isProcessing ? '分割中...' : '15分ごとに自動分割してダウンロード'}
                   </button>
                   
                   {isProcessing && (
@@ -462,16 +462,16 @@ export default function ChunkedTranscribePage() {
                             </p>
                           </div>
                         </div>
-                        <div className="space-x-2 ml-4">
+                        <div className="flex space-x-2 ml-4">
                           <button
                             onClick={() => downloadHourlyFile(file)}
-                            className="text-sm bg-blue-600 text-white py-1 px-3 rounded hover:bg-blue-700"
+                            className="text-sm bg-blue-600 text-white py-1 px-3 rounded hover:bg-blue-700 whitespace-nowrap"
                           >
                             ダウンロード
                           </button>
                           <button
                             onClick={() => handleSelectHourlyFile(file, index)}
-                            className="text-sm bg-green-600 text-white py-1 px-3 rounded hover:bg-green-700"
+                            className="text-sm bg-green-600 text-white py-1 px-3 rounded hover:bg-green-700 whitespace-nowrap"
                           >
                             チャンク分割
                           </button>
