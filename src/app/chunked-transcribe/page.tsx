@@ -214,26 +214,43 @@ export default function ChunkedTranscribePage() {
       }
 
       console.log(`Starting integrated transcription with ${allChunks.length} chunks`);
+      console.log('All chunks data:', allChunks);
+      console.log('Sample chunk:', allChunks[0]);
+
+      // チャンクデータを整形
+      const formattedChunks = allChunks.map((result, index) => ({
+        id: result.id || `chunk_${index}`,
+        chunkId: result.chunkId || result.id,
+        cloudPath: result.cloudPath,
+        startTime: result.startTime || 0,
+        endTime: result.endTime || 0,
+        duration: result.duration || 0
+      }));
+
+      console.log('Formatted chunks sample:', formattedChunks[0]);
 
       // 統合された文字起こしジョブを開始（Cloud Runを使用）
       const CLOUD_RUN_URL = 'https://darwin-project-574364248563.asia-northeast1.run.app';
+      const requestBody = {
+        userId,
+        sessionId: sessionId, // 統合セッションID
+        chunks: formattedChunks
+      };
+
+      console.log('Sending to Cloud Run:', {
+        url: `${CLOUD_RUN_URL}/api/transcribe-chunks`,
+        userId,
+        sessionId,
+        chunksCount: formattedChunks.length,
+        firstChunk: formattedChunks[0]
+      });
+
       const transcriptionResponse = await fetch(`${CLOUD_RUN_URL}/api/transcribe-chunks`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          userId,
-          sessionId: sessionId, // 統合セッションID
-          chunks: allChunks.map((result, index) => ({
-            id: result.id || `chunk_${index}`,
-            chunkId: result.chunkId || result.id,
-            cloudPath: result.cloudPath,
-            startTime: result.startTime || 0,
-            endTime: result.endTime || 0,
-            duration: result.duration || 0
-          }))
-        })
+        body: JSON.stringify(requestBody)
       });
 
       if (!transcriptionResponse.ok) {

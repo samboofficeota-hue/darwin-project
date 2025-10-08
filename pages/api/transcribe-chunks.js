@@ -63,6 +63,11 @@ export default async function handler(req, res) {
   try {
     const { userId, sessionId, chunks } = req.body;
 
+    console.log('=== Transcribe Chunks API Called ===');
+    console.log('Request body:', JSON.stringify(req.body, null, 2).substring(0, 1000));
+    console.log('Chunks count:', chunks?.length);
+    console.log('First chunk sample:', chunks?.[0]);
+
     if (!userId || !sessionId || !chunks || !Array.isArray(chunks)) {
       return res.status(400).json({ 
         error: 'userId, sessionId, chunks が必要です' 
@@ -208,12 +213,23 @@ async function processTranscriptionAsync(jobId) {
 async function transcribeChunk(chunk) {
   try {
     console.log(`Transcribing chunk: ${chunk.chunkId}`);
+    console.log(`Cloud Path: ${chunk.cloudPath}`);
+    console.log(`Bucket Name: ${BUCKET_NAME}`);
     
     // Cloud Storageからファイルをダウンロード
     const bucket = storage.bucket(BUCKET_NAME);
     const file = bucket.file(chunk.cloudPath);
     
+    // ファイルの存在確認
+    const [exists] = await file.exists();
+    console.log(`File exists in GCS: ${exists}`);
+    
+    if (!exists) {
+      throw new Error(`ファイルが見つかりません: ${chunk.cloudPath} in bucket ${BUCKET_NAME}`);
+    }
+    
     const [audioBuffer] = await file.download();
+    console.log(`Downloaded ${audioBuffer.length} bytes from GCS`);
     const audioBytes = audioBuffer.toString('base64');
 
     // 音声設定
