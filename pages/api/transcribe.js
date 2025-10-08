@@ -3,13 +3,11 @@
  * 音声データを直接受け取って文字起こしを実行
  */
 
-import { SpeechClient } from '@google-cloud/speech';
+import { getSpeechClient, buildRecognitionConfig, guessEncodingFromFormat } from '../../lib/google-speech.js';
+import { rateLimit } from '../../lib/rate-limit.js';
 
-// Google Cloud Speech-to-Text クライアントの初期化
-const speechClient = new SpeechClient({
-  projectId: process.env.GOOGLE_CLOUD_PROJECT_ID || 'whgc-project',
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
-});
+// Google Cloud Speech-to-Text クライアント
+const speechClient = getSpeechClient();
 
 export const config = {
   api: {
@@ -35,7 +33,14 @@ export default async function handler(req, res) {
   }
 
   try {
-    const { audioData, format = 'mp4', startTime = 0, duration = 300 } = req.body;
+    const { audioData, format = 'mp4', startTime = 0, duration = 300, diarization = true } = req.body;
+
+    // Rate limit per IP
+    const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString();
+    const allowed = await rateLimit(`transcribe:single:${ip}`, { windowSec: 60, limit: 12 });
+    if (!allowed) {
+      return res.status(429).json({ error: 'リクエストが多すぎます。しばらくしてから再試行してください。' });
+    }
 
     if (!audioData) {
       return res.status(400).json({ error: '音声データが必要です' });
@@ -76,18 +81,20 @@ async function transcribeAudio(audioBuffer, format, startTime, duration) {
       content: audioBytes,
     };
 
-    // 言語設定（日本語）
-    const config = {
-      encoding: getAudioEncoding(format),
-      sampleRateHertz: 44100,
+    // 設定（安全な自動判別を優先）
+    const config = buildRecognitionConfig({
+      encoding: guessEncodingFromFormat(format),
+      // omit sampleRateHertz to allow auto-detection for compressed formats
       languageCode: 'ja-JP',
-      alternativeLanguageCodes: ['en-US'], // 英語も対応
+      alternativeLanguageCodes: ['en-US'],
       enableAutomaticPunctuation: true,
       enableWordTimeOffsets: true,
       enableWordConfidence: true,
-      model: 'latest_long', // 長尺音声用のモデル
-      useEnhanced: true, // 高精度モード
-    };
+      diarization: !!diarization,
+      // Enhanced model may not be available for all locales; avoid hard-coding
+      useEnhanced: false,
+      model: undefined,
+    });
 
     // 文字起こしの実行
     const [operation] = await speechClient.longRunningRecognize({
@@ -127,19 +134,7 @@ async function transcribeAudio(audioBuffer, format, startTime, duration) {
   }
 }
 
-/**
- * フォーマットから音声エンコーディングを取得
- */
-function getAudioEncoding(format) {
-  const encodingMap = {
-    'mp3': 'MP3',
-    'wav': 'LINEAR16',
-    'mp4': 'MP4',
-    'm4a': 'MP4',
-    'webm': 'WEBM_OPUS',
-  };
-  return encodingMap[format] || 'MP4';
-}
+// removed local encoding map; using guessEncodingFromFormat in lib
 
 /**
  * 平均信頼度を計算

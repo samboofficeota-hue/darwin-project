@@ -3,27 +3,13 @@
  * Cloud Storage上の分割された音声ファイルを文字起こし
  */
 
-import { SpeechClient } from '@google-cloud/speech';
 import { Storage } from '@google-cloud/storage';
+import { getSpeechClient, buildRecognitionConfig } from '../../lib/google-speech.js';
+import { rateLimit } from '../../lib/rate-limit.js';
 import { saveJobState, loadJobState } from '../../lib/storage.js';
 
-// Google Cloud クライアントの初期化
-const speechClient = new SpeechClient({
-  projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
-  credentials: {
-    type: 'service_account',
-    project_id: process.env.GOOGLE_CLOUD_PROJECT_ID,
-    private_key_id: process.env.GOOGLE_PRIVATE_KEY_ID,
-    private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
-    client_email: process.env.GOOGLE_CLIENT_EMAIL,
-    client_id: process.env.GOOGLE_CLIENT_ID,
-    auth_uri: 'https://accounts.google.com/o/oauth2/auth',
-    token_uri: 'https://oauth2.googleapis.com/token',
-    auth_provider_x509_cert_url: 'https://www.googleapis.com/oauth2/v1/certs',
-    client_x509_cert_url: `https://www.googleapis.com/robot/v1/metadata/x509/${encodeURIComponent(process.env.GOOGLE_CLIENT_EMAIL || '')}`,
-    universe_domain: 'googleapis.com'
-  }
-});
+// Google Speech client via shared helper
+const speechClient = getSpeechClient();
 
 const storage = new Storage({
   projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
@@ -61,6 +47,14 @@ export default async function handler(req, res) {
 
   try {
     const { userId, sessionId, chunks } = req.body;
+
+    // Rate limit per user/session or IP
+    const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString();
+    const rlKey = userId && sessionId ? `transcribe:chunks:${userId}:${sessionId}` : `transcribe:chunks:${ip}`;
+    const allowed = await rateLimit(rlKey, { windowSec: 60, limit: 6 });
+    if (!allowed) {
+      return res.status(429).json({ error: 'リクエストが多すぎます。しばらくしてから再試行してください。' });
+    }
 
     if (!userId || !sessionId || !chunks || !Array.isArray(chunks)) {
       return res.status(400).json({ 
@@ -202,7 +196,8 @@ async function transcribeChunk(chunk) {
       content: audioBytes,
     };
 
-    const config = {
+    const config = buildRecognitionConfig({
+      // Files are transcoded to 16kHz mono LINEAR16
       encoding: 'LINEAR16',
       sampleRateHertz: 16000,
       languageCode: 'ja-JP',
@@ -210,9 +205,12 @@ async function transcribeChunk(chunk) {
       enableAutomaticPunctuation: true,
       enableWordTimeOffsets: true,
       enableWordConfidence: true,
-      model: 'latest_long',
-      useEnhanced: true,
-    };
+      diarization: true,
+      useEnhanced: false,
+      model: undefined,
+      audioChannelCount: 1,
+      enableSeparateRecognitionPerChannel: false,
+    });
 
     // 文字起こしの実行
     const [operation] = await speechClient.longRunningRecognize({
