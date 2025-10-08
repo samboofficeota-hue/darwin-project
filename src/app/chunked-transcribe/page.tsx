@@ -63,8 +63,8 @@ export default function ChunkedTranscribePage() {
     status: 'idle' | 'splitting' | 'uploading' | 'transcribing' | 'completed' | 'error';
     error?: string;
     jobId?: string;
+    uploadResults?: any[];
   }}>({});
-  const [completedJobIds, setCompletedJobIds] = useState<string[]>([]);
   const [isStartingTranscription, setIsStartingTranscription] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -198,26 +198,54 @@ export default function ChunkedTranscribePage() {
     setIsStartingTranscription(true);
 
     try {
-      // 完了したすべてのjobIdを取得
-      const allJobIds = completedJobIds.filter(id => id);
+      // すべてのアップロード結果を収集
+      const allChunks: any[] = [];
       
-      if (allJobIds.length === 0) {
-        throw new Error('完了したジョブが見つかりません');
+      hourlyFiles.forEach(file => {
+        const fileId = `${file.sessionId}_segment_${file.segmentIndex}`;
+        const state = fileProcessingStates[fileId];
+        if (state?.uploadResults) {
+          allChunks.push(...state.uploadResults);
+        }
+      });
+      
+      if (allChunks.length === 0) {
+        throw new Error('アップロード済みのチャンクが見つかりません');
       }
 
-      console.log(`Starting integrated transcription with ${allJobIds.length} job IDs:`, allJobIds);
+      console.log(`Starting integrated transcription with ${allChunks.length} chunks`);
 
-      // 最初のjobIdの結果ページに遷移（すべてのチャンクが含まれる）
-      // または、新しいAPIエンドポイントで複数のjobIdを統合する
-      if (allJobIds.length === 1) {
-        // 単一のジョブの場合はそのまま結果ページへ
-        router.push(`/audio-transcribe/${allJobIds[0]}`);
-      } else {
-        // 複数のジョブの場合は最初のジョブに遷移
-        // TODO: 将来的には複数ジョブを統合するAPIを作成
-        console.log('Multiple jobs detected, redirecting to first job result');
-        router.push(`/audio-transcribe/${allJobIds[0]}`);
+      // 統合された文字起こしジョブを開始
+      const transcriptionResponse = await fetch('/api/transcribe-chunks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId,
+          sessionId: sessionId, // 統合セッションID
+          chunks: allChunks.map((result, index) => ({
+            id: result.id || `chunk_${index}`,
+            chunkId: result.chunkId || result.id,
+            cloudPath: result.cloudPath,
+            startTime: result.startTime || 0,
+            endTime: result.endTime || 0,
+            duration: result.duration || 0
+          }))
+        })
+      });
+
+      if (!transcriptionResponse.ok) {
+        const errorData = await transcriptionResponse.json();
+        throw new Error(`文字起こしAPI呼び出しに失敗しました: ${errorData.error || transcriptionResponse.status}`);
       }
+
+      const transcriptionResult = await transcriptionResponse.json();
+      console.log('Transcription job created:', transcriptionResult);
+      
+      // 結果ページに遷移
+      router.push(`/audio-transcribe/${transcriptionResult.jobId}`);
+      
     } catch (error) {
       console.error('Error starting integrated transcription:', error);
       setError(error instanceof Error ? error.message : '統合文字起こしの開始に失敗しました');
@@ -272,7 +300,7 @@ export default function ChunkedTranscribePage() {
           ...prev,
           [fileId]: {
             ...prev[fileId],
-            progress: 50 + Math.round(progressInfo.percentage * 0.3), // アップロードは30%
+            progress: 50 + Math.round(progressInfo.percentage * 0.5), // アップロードは残り50%
             status: 'uploading'
           }
         }));
@@ -280,43 +308,9 @@ export default function ChunkedTranscribePage() {
 
       const uploadResults = await uploadChunksWithSignedUrl(audioChunks, userId, sessionId, onUploadProgress);
       
-      // ステップ3: 文字起こし開始
-      console.log(`Step 3: Starting transcription for ${fileId}`);
-      setFileProcessingStates(prev => ({
-        ...prev,
-        [fileId]: {
-          ...prev[fileId],
-          progress: 80,
-          status: 'transcribing'
-        }
-      }));
-
-      const transcriptionResponse = await fetch('/api/transcribe-chunks', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          userId,
-          sessionId: `${sessionId}_${fileId}`,
-          chunks: uploadResults.map(result => ({
-            id: result.id,
-            chunkId: result.chunkId,
-            cloudPath: result.cloudPath,
-            startTime: result.startTime,
-            endTime: result.endTime,
-            duration: result.duration
-          }))
-        })
-      });
-
-      if (!transcriptionResponse.ok) {
-        throw new Error(`文字起こしAPI呼び出しに失敗しました: ${transcriptionResponse.status}`);
-      }
-
-      const transcriptionResult = await transcriptionResponse.json();
+      console.log(`Upload completed for ${fileId}: ${uploadResults.length} chunks`);
       
-      // 完了
+      // アップロード完了 - アップロード結果を保存
       setFileProcessingStates(prev => ({
         ...prev,
         [fileId]: {
@@ -324,14 +318,11 @@ export default function ChunkedTranscribePage() {
           progress: 100,
           status: 'completed',
           isProcessing: false,
-          jobId: transcriptionResult.jobId
+          uploadResults: uploadResults
         }
       }));
 
-      // jobIdを保存
-      setCompletedJobIds(prev => [...prev, transcriptionResult.jobId]);
-
-      console.log(`Successfully processed ${fileId}:`, transcriptionResult);
+      console.log(`Successfully uploaded ${fileId}: ${uploadResults.length} chunks`);
       
     } catch (error) {
       console.error(`Error processing ${fileId}:`, error);
@@ -712,7 +703,6 @@ export default function ChunkedTranscribePage() {
                                     <span>
                                       {processingState.status === 'splitting' && '🔄 チャンク分割中...'}
                                       {processingState.status === 'uploading' && '☁️ クラウドアップロード中...'}
-                                      {processingState.status === 'transcribing' && '🎤 文字起こし開始中...'}
                                     </span>
                                     <span>{processingState.progress}%</span>
                                   </div>
