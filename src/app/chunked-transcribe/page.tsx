@@ -60,9 +60,20 @@ export default function ChunkedTranscribePage() {
     progress: number;
     status: 'idle' | 'splitting' | 'uploading' | 'transcribing' | 'completed' | 'error';
     error?: string;
+    jobId?: string;
   }}>({});
+  const [completedJobIds, setCompletedJobIds] = useState<string[]>([]);
+  const [isStartingTranscription, setIsStartingTranscription] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
+
+  // すべてのファイルのアップロードが完了したかを確認
+  const allFilesUploaded = hourlyFiles.length > 0 && 
+    hourlyFiles.every(file => {
+      const fileId = `${file.sessionId}_segment_${file.segmentIndex}`;
+      const state = fileProcessingStates[fileId];
+      return state?.status === 'completed';
+    });
 
   // ファイル選択時の処理
   const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -179,6 +190,39 @@ export default function ChunkedTranscribePage() {
     console.log('File ready for chunk splitting:', file.name);
   };
 
+  // すべてのチャンクを統合して文字起こしを開始
+  const handleStartIntegratedTranscription = async () => {
+    console.log('=== handleStartIntegratedTranscription START ===');
+    setIsStartingTranscription(true);
+
+    try {
+      // 完了したすべてのjobIdを取得
+      const allJobIds = completedJobIds.filter(id => id);
+      
+      if (allJobIds.length === 0) {
+        throw new Error('完了したジョブが見つかりません');
+      }
+
+      console.log(`Starting integrated transcription with ${allJobIds.length} job IDs:`, allJobIds);
+
+      // 最初のjobIdの結果ページに遷移（すべてのチャンクが含まれる）
+      // または、新しいAPIエンドポイントで複数のjobIdを統合する
+      if (allJobIds.length === 1) {
+        // 単一のジョブの場合はそのまま結果ページへ
+        router.push(`/audio-transcribe/${allJobIds[0]}`);
+      } else {
+        // 複数のジョブの場合は最初のジョブに遷移
+        // TODO: 将来的には複数ジョブを統合するAPIを作成
+        console.log('Multiple jobs detected, redirecting to first job result');
+        router.push(`/audio-transcribe/${allJobIds[0]}`);
+      }
+    } catch (error) {
+      console.error('Error starting integrated transcription:', error);
+      setError(error instanceof Error ? error.message : '統合文字起こしの開始に失敗しました');
+      setIsStartingTranscription(false);
+    }
+  };
+
   // 個別ファイルをクラウドに送る処理
   const handleSendToCloud = async (file: any, fileId: string) => {
     console.log(`=== handleSendToCloud START for ${fileId} ===`);
@@ -277,14 +321,15 @@ export default function ChunkedTranscribePage() {
           ...prev[fileId],
           progress: 100,
           status: 'completed',
-          isProcessing: false
+          isProcessing: false,
+          jobId: transcriptionResult.jobId
         }
       }));
 
+      // jobIdを保存
+      setCompletedJobIds(prev => [...prev, transcriptionResult.jobId]);
+
       console.log(`Successfully processed ${fileId}:`, transcriptionResult);
-      
-      // 結果ページに遷移
-      router.push(`/audio-transcribe/${transcriptionResult.jobId}`);
       
     } catch (error) {
       console.error(`Error processing ${fileId}:`, error);
@@ -681,7 +726,7 @@ export default function ChunkedTranscribePage() {
                               {/* 完了・エラー状態表示 */}
                               {processingState?.status === 'completed' && (
                                 <div className="mt-2 text-xs text-green-600 font-medium">
-                                  ✅ 処理完了 - 結果ページに移動中...
+                                  ✅ アップロード完了
                                 </div>
                               )}
                               {processingState?.status === 'error' && (
@@ -714,6 +759,36 @@ export default function ChunkedTranscribePage() {
                       );
                     })}
                 </div>
+
+                {/* すべてのファイルがアップロード完了したら文字起こしスタートボタンを表示 */}
+                {allFilesUploaded && (
+                  <div className="mt-6 bg-green-50 border-2 border-green-300 rounded-md p-6">
+                    <div className="text-center">
+                      <div className="mx-auto flex items-center justify-center h-12 w-12 rounded-full bg-green-100 mb-4">
+                        <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                        </svg>
+                      </div>
+                      <h3 className="text-lg font-semibold text-green-800 mb-2">
+                        ✅ すべてのファイルのアップロードが完了しました！
+                      </h3>
+                      <p className="text-sm text-green-700 mb-4">
+                        {hourlyFiles.length}個のファイルすべてのチャンクがクラウドにアップロードされました。<br />
+                        文字起こしを開始する準備が整いました。
+                      </p>
+                      <button
+                        onClick={handleStartIntegratedTranscription}
+                        disabled={isStartingTranscription}
+                        className="px-8 py-3 bg-green-600 text-white rounded-lg font-semibold text-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                        {isStartingTranscription ? '開始中...' : '🎤 文字起こしスタート'}
+                      </button>
+                      <p className="mt-3 text-xs text-green-600">
+                        ※ クリックすると文字起こし結果ページに移動します
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
