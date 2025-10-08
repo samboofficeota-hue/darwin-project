@@ -55,6 +55,12 @@ export default function ChunkedTranscribePage() {
   const [hourlyFiles, setHourlyFiles] = useState<any[]>([]);
   const [currentHourlyFile, setCurrentHourlyFile] = useState<number>(0);
   const [isCancelled, setIsCancelled] = useState<boolean>(false);
+  const [fileProcessingStates, setFileProcessingStates] = useState<{[key: string]: {
+    isProcessing: boolean;
+    progress: number;
+    status: 'idle' | 'splitting' | 'uploading' | 'transcribing' | 'completed' | 'error';
+    error?: string;
+  }}>({});
   const fileInputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
 
@@ -154,6 +160,143 @@ export default function ChunkedTranscribePage() {
     setCurrentHourlyFile(index);
     setAudioFile(file.file);
     setCurrentStep('split');
+  };
+
+  // ダウンロードしたファイルをアップロードして文字起こし
+  const handleDownloadedFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    console.log('Downloaded file uploaded:', file.name, file.size, file.type);
+    
+    // ファイルを設定してチャンク分割ステップに移行
+    setAudioFile(file);
+    setHourlyFiles([]); // 時間分割ファイルリストをクリア
+    setCurrentStep('split');
+    setError('');
+    
+    // 成功メッセージを表示
+    console.log('File ready for chunk splitting:', file.name);
+  };
+
+  // 個別ファイルをクラウドに送る処理
+  const handleSendToCloud = async (file: any, fileId: string) => {
+    console.log(`=== handleSendToCloud START for ${fileId} ===`);
+    
+    // 処理状態を初期化
+    setFileProcessingStates(prev => ({
+      ...prev,
+      [fileId]: {
+        isProcessing: true,
+        progress: 0,
+        status: 'splitting',
+        error: undefined
+      }
+    }));
+
+    try {
+      // ステップ1: チャンク分割
+      console.log(`Step 1: Splitting audio for ${fileId}`);
+      const onSplitProgress = (progressInfo: { current: number; total: number; percentage: number }) => {
+        setFileProcessingStates(prev => ({
+          ...prev,
+          [fileId]: {
+            ...prev[fileId],
+            progress: Math.round(progressInfo.percentage * 0.5), // 分割は全体の50%
+            status: 'splitting'
+          }
+        }));
+      };
+
+      const audioChunks = await splitAudioFile(file.file, 180, onSplitProgress);
+      
+      // ステップ2: クラウドアップロード
+      console.log(`Step 2: Uploading to cloud for ${fileId}`);
+      setFileProcessingStates(prev => ({
+        ...prev,
+        [fileId]: {
+          ...prev[fileId],
+          progress: 50,
+          status: 'uploading'
+        }
+      }));
+
+      const onUploadProgress = (progressInfo: { current: number; total: number; percentage: number }) => {
+        setFileProcessingStates(prev => ({
+          ...prev,
+          [fileId]: {
+            ...prev[fileId],
+            progress: 50 + Math.round(progressInfo.percentage * 0.3), // アップロードは30%
+            status: 'uploading'
+          }
+        }));
+      };
+
+      const uploadResults = await uploadChunksWithSignedUrl(audioChunks, userId, sessionId, onUploadProgress);
+      
+      // ステップ3: 文字起こし開始
+      console.log(`Step 3: Starting transcription for ${fileId}`);
+      setFileProcessingStates(prev => ({
+        ...prev,
+        [fileId]: {
+          ...prev[fileId],
+          progress: 80,
+          status: 'transcribing'
+        }
+      }));
+
+      const transcriptionResponse = await fetch('/api/transcribe-chunks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId,
+          sessionId: `${sessionId}_${fileId}`,
+          chunks: uploadResults.map(result => ({
+            id: result.id,
+            startTime: result.startTime,
+            endTime: result.endTime,
+            duration: result.duration
+          }))
+        })
+      });
+
+      if (!transcriptionResponse.ok) {
+        throw new Error(`文字起こしAPI呼び出しに失敗しました: ${transcriptionResponse.status}`);
+      }
+
+      const transcriptionResult = await transcriptionResponse.json();
+      
+      // 完了
+      setFileProcessingStates(prev => ({
+        ...prev,
+        [fileId]: {
+          ...prev[fileId],
+          progress: 100,
+          status: 'completed',
+          isProcessing: false
+        }
+      }));
+
+      console.log(`Successfully processed ${fileId}:`, transcriptionResult);
+      
+      // 結果ページに遷移
+      router.push(`/audio-transcribe/${transcriptionResult.jobId}`);
+      
+    } catch (error) {
+      console.error(`Error processing ${fileId}:`, error);
+      setFileProcessingStates(prev => ({
+        ...prev,
+        [fileId]: {
+          ...prev[fileId],
+          progress: 0,
+          status: 'error',
+          isProcessing: false,
+          error: error instanceof Error ? error.message : '処理に失敗しました'
+        }
+      }));
+    }
   };
 
   // 音声ファイルの分割処理
@@ -337,6 +480,25 @@ export default function ChunkedTranscribePage() {
               音声ファイル分割・文字起こし
             </h1>
 
+            {/* ワークフロー説明 */}
+            <div className="mb-6 p-4 bg-gray-50 border border-gray-200 rounded-md">
+              <h2 className="text-lg font-semibold text-gray-800 mb-3">📋 処理の流れ</h2>
+              <div className="space-y-2 text-sm text-gray-700">
+                <div className="flex items-center space-x-2">
+                  <span className="w-6 h-6 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
+                  <span><strong>大きなファイル（1時間以上）:</strong> 「15分ごとに自動分割してダウンロード」→ ダウンロードしたファイルを再アップロード</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="w-6 h-6 bg-green-600 text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
+                  <span><strong>小さなファイル（1時間未満）:</strong> 直接「クラウドへ送る」→ Cloud Storageにアップロード → 文字起こし</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="w-6 h-6 bg-purple-600 text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
+                  <span><strong>「クラウドへ送る」ボタンの用途:</strong> ファイルを小さなチャンクに分割してクラウドに送信し、文字起こしを実行</span>
+                </div>
+              </div>
+            </div>
+
             {/* エラー表示 */}
             {error && (
               <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-md">
@@ -449,46 +611,104 @@ export default function ChunkedTranscribePage() {
                   </p>
                 </div>
 
+                {/* ダウンロード済みファイルの再アップロード機能 */}
+                <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
+                  <h3 className="text-sm font-medium text-blue-800 mb-2">
+                    💡 ダウンロードしたファイルを文字起こしする場合
+                  </h3>
+                  <p className="text-sm text-blue-700 mb-3">
+                    ダウンロードしたファイルを再度アップロードして文字起こしを実行できます。
+                  </p>
+                  <input
+                    type="file"
+                    accept="audio/*"
+                    onChange={handleDownloadedFileUpload}
+                    className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                  />
+                </div>
+
                 <div className="space-y-4">
                   {hourlyFiles
                     .sort((a, b) => a.segmentIndex - b.segmentIndex) // 連番順にソート
-                    .map((file, index) => (
-                    <div key={index} className="bg-gray-50 p-4 rounded-md">
-                      <div className="flex items-center justify-between">
-                        <div className="flex-1">
-                          <h4 className="text-sm font-medium text-gray-900">{file.file.name}</h4>
-                          <div className="text-sm text-gray-600 space-y-1">
-                            <p>
-                              <strong>セグメント:</strong> {file.segmentIndex}/{file.totalSegments}
-                            </p>
-                            <p>
-                              <strong>時間:</strong> {Math.floor(file.startTime / 60)}分 - {Math.floor(file.endTime / 60)}分
-                            </p>
-                            <p>
-                              <strong>セッションID:</strong> {file.sessionId}
-                            </p>
-                            <p>
-                              <strong>元ファイル:</strong> {file.originalFileName}
-                            </p>
+                    .map((file, index) => {
+                      const fileId = `${file.sessionId}_segment_${file.segmentIndex}`;
+                      const processingState = fileProcessingStates[fileId];
+                      
+                      return (
+                        <div key={index} className="bg-gray-50 p-4 rounded-md">
+                          <div className="flex items-center justify-between">
+                            <div className="flex-1">
+                              <h4 className="text-sm font-medium text-gray-900">{file.file.name}</h4>
+                              <div className="text-sm text-gray-600 space-y-1">
+                                <p>
+                                  <strong>セグメント:</strong> {file.segmentIndex}/{file.totalSegments}
+                                </p>
+                                <p>
+                                  <strong>時間:</strong> {Math.floor(file.startTime / 60)}分 - {Math.floor(file.endTime / 60)}分
+                                </p>
+                                <p>
+                                  <strong>セッションID:</strong> {file.sessionId}
+                                </p>
+                                <p>
+                                  <strong>元ファイル:</strong> {file.originalFileName}
+                                </p>
+                              </div>
+                              
+                              {/* 個別進行状況表示 */}
+                              {processingState?.isProcessing && (
+                                <div className="mt-3">
+                                  <div className="flex justify-between text-xs text-gray-600 mb-1">
+                                    <span>
+                                      {processingState.status === 'splitting' && '🔄 チャンク分割中...'}
+                                      {processingState.status === 'uploading' && '☁️ クラウドアップロード中...'}
+                                      {processingState.status === 'transcribing' && '🎤 文字起こし開始中...'}
+                                    </span>
+                                    <span>{processingState.progress}%</span>
+                                  </div>
+                                  <div className="w-full bg-gray-200 rounded-full h-2">
+                                    <div
+                                      className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                                      style={{ width: `${processingState.progress}%` }}
+                                    ></div>
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* 完了・エラー状態表示 */}
+                              {processingState?.status === 'completed' && (
+                                <div className="mt-2 text-xs text-green-600 font-medium">
+                                  ✅ 処理完了 - 結果ページに移動中...
+                                </div>
+                              )}
+                              {processingState?.status === 'error' && (
+                                <div className="mt-2 text-xs text-red-600">
+                                  ❌ エラー: {processingState.error}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex space-x-2 ml-4">
+                              <button
+                                onClick={() => downloadHourlyFile(file)}
+                                disabled={processingState?.isProcessing}
+                                className="text-sm bg-blue-600 text-white py-1 px-3 rounded hover:bg-blue-700 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                              >
+                                ダウンロード
+                              </button>
+                              <button
+                                onClick={() => handleSendToCloud(file, fileId)}
+                                disabled={processingState?.isProcessing || processingState?.status === 'completed'}
+                                className="text-sm bg-green-600 text-white py-1 px-3 rounded hover:bg-green-700 whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="このファイルをクラウドに送信して文字起こしを実行"
+                              >
+                                {processingState?.isProcessing ? '送信中...' : 
+                                 processingState?.status === 'completed' ? '完了' : 
+                                 'クラウドへ送る'}
+                              </button>
+                            </div>
                           </div>
                         </div>
-                        <div className="flex space-x-2 ml-4">
-                          <button
-                            onClick={() => downloadHourlyFile(file)}
-                            className="text-sm bg-blue-600 text-white py-1 px-3 rounded hover:bg-blue-700 whitespace-nowrap"
-                          >
-                            ダウンロード
-                          </button>
-                          <button
-                            onClick={() => handleSelectHourlyFile(file, index)}
-                            className="text-sm bg-green-600 text-white py-1 px-3 rounded hover:bg-green-700 whitespace-nowrap"
-                          >
-                            チャンク分割
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                      );
+                    })}
                 </div>
               </div>
             )}
@@ -503,12 +723,22 @@ export default function ChunkedTranscribePage() {
                     <p><strong>サイズ:</strong> {(audioFile.size / 1024 / 1024).toFixed(2)} MB</p>
                     <p><strong>タイプ:</strong> {audioFile.type}</p>
                   </div>
+                  
+                  {/* クラウド送信の説明 */}
+                  <div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded text-sm">
+                    <p className="text-blue-800 font-medium mb-1">☁️ クラウドへ送るについて</p>
+                    <p className="text-blue-700">
+                      このボタンを押すと、音声ファイルを小さなチャンク（3-5分）に分割し、
+                      クラウドにアップロードして文字起こしを実行します。
+                    </p>
+                  </div>
+                  
                   <button
                     onClick={handleSplitAudio}
                     disabled={isProcessing}
                     className="mt-4 w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {isProcessing ? '分割中...' : 'チャンク分割を実行'}
+                    {isProcessing ? 'クラウドに送信中...' : 'クラウドへ送る'}
                   </button>
                   
                   {/* ファイルサイズが大きい場合の警告 */}
@@ -521,11 +751,11 @@ export default function ChunkedTranscribePage() {
               </div>
             )}
 
-            {/* ステップ6: 分割処理中 */}
+            {/* ステップ6: クラウド送信処理中 */}
             {currentStep === 'split' && isProcessing && (
               <div className="space-y-6">
                 <div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-4">音声ファイルを分割中...</h3>
+                  <h3 className="text-lg font-medium text-gray-900 mb-4">クラウドに送信中...</h3>
                   <div className="bg-gray-200 rounded-full h-2 mb-4">
                     <div 
                       className="bg-blue-600 h-2 rounded-full transition-all duration-300"
@@ -533,7 +763,7 @@ export default function ChunkedTranscribePage() {
                     ></div>
                   </div>
                   <p className="text-sm text-gray-600">
-                    音声ファイルをチャンクに分割しています...
+                    音声ファイルをチャンクに分割してクラウドに送信しています...
                   </p>
                 </div>
               </div>
