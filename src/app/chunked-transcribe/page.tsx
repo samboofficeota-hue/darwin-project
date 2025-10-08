@@ -201,7 +201,17 @@ export default function ChunkedTranscribePage() {
       
     } catch (error) {
       console.error('Error splitting audio:', error);
-      setError(error instanceof Error ? error.message : '音声ファイルの分割に失敗しました');
+      const errorMessage = error instanceof Error ? error.message : '音声ファイルの分割に失敗しました';
+      setError(errorMessage);
+      
+      // エラーの種類に応じて適切なアドバイスを提供
+      if (errorMessage.includes('ファイルサイズが大きすぎます')) {
+        setError(errorMessage + '\n\n推奨: 「15分ごとに自動分割してダウンロード」ボタンを使用してください。');
+      } else if (errorMessage.includes('チャンク数が多すぎます')) {
+        setError(errorMessage + '\n\n推奨: より長いチャンクサイズを使用するか、先に時間分割を実行してください。');
+      } else if (errorMessage.includes('メモリ')) {
+        setError(errorMessage + '\n\n推奨: ブラウザを再起動するか、より小さなファイルで試してください。');
+      }
     } finally {
       // 処理完了後に必ずisProcessingをfalseに設定
       console.log('Setting isProcessing to false');
@@ -498,8 +508,15 @@ export default function ChunkedTranscribePage() {
                     disabled={isProcessing}
                     className="mt-4 w-full bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    {isProcessing ? '分割中...' : '音声を分割'}
+                    {isProcessing ? '分割中...' : 'チャンク分割を実行'}
                   </button>
+                  
+                  {/* ファイルサイズが大きい場合の警告 */}
+                  {audioFile.size > 50 * 1024 * 1024 && (
+                    <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-sm text-yellow-800">
+                      ⚠️ ファイルサイズが大きいため、処理に時間がかかったりメモリ不足が発生する可能性があります。
+                    </div>
+                  )}
                 </div>
               </div>
             )}
