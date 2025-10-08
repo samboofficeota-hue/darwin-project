@@ -302,6 +302,18 @@ export default function ChunkedTranscribePage() {
 
       const audioChunks = await splitAudioFile(file.file, 180, onSplitProgress);
       
+      // セグメント情報を各チャンクに追加
+      audioChunks.forEach(chunk => {
+        chunk.metadata = {
+          ...chunk.metadata,
+          segmentIndex: file.segmentIndex,
+          totalSegments: file.totalSegments,
+          sessionId: file.sessionId
+        };
+      });
+      
+      console.log(`Added segment metadata to ${audioChunks.length} chunks, segmentIndex: ${file.segmentIndex}`);
+      
       // ステップ2: クラウドアップロード
       console.log(`Step 2: Uploading to cloud for ${fileId}`);
       setFileProcessingStates(prev => ({
@@ -324,10 +336,10 @@ export default function ChunkedTranscribePage() {
         }));
       };
 
-      // 各ファイルごとにユニークなセッションIDを使用（チャンクの上書きを防ぐ）
-      const uniqueSessionId = `${sessionId}_${fileId}`;
-      console.log(`Using unique session ID: ${uniqueSessionId}`);
-      const uploadResults = await uploadChunksWithSignedUrl(audioChunks, userId, uniqueSessionId, onUploadProgress);
+      // すべてのファイルで同じsessionIdを使用
+      // チャンクIDにセグメント情報が含まれるため、上書きされない
+      console.log(`Using session ID: ${sessionId} for ${fileId}`);
+      const uploadResults = await uploadChunksWithSignedUrl(audioChunks, userId, sessionId, onUploadProgress);
       
       console.log(`Upload completed for ${fileId}: ${uploadResults.length} chunks`);
       
