@@ -286,12 +286,10 @@ async function transcribeChunk(chunk) {
       encoding: 'LINEAR16',
       sampleRateHertz: detectedSampleRate,
       languageCode: 'ja-JP',
-      alternativeLanguageCodes: ['en-US'],
+      // 安全な最小構成。拡張モデル指定は一旦外す
       enableAutomaticPunctuation: true,
       enableWordTimeOffsets: true,
       enableWordConfidence: true,
-      model: 'latest_long',
-      useEnhanced: true,
     };
 
     // 文字起こしの実行
