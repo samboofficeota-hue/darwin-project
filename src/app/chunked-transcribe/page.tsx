@@ -32,6 +32,8 @@ interface UploadResult {
   status: string;
   error?: string;
   uploadResult?: any;
+  chunkId?: string;
+  cloudPath?: string;
 }
 
 export default function ChunkedTranscribePage() {

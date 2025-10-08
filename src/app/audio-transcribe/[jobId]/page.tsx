@@ -22,6 +22,9 @@ interface JobStatus {
   audioMetadata: any;
   result: TranscriptionResult;
   error: string;
+  completedChunks?: number;
+  totalChunks?: number;
+  lastUpdate?: string;
 }
 
 export default function AudioTranscriptionResultPage() {
