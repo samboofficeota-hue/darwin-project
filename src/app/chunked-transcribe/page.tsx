@@ -215,8 +215,9 @@ export default function ChunkedTranscribePage() {
 
       console.log(`Starting integrated transcription with ${allChunks.length} chunks`);
 
-      // 統合された文字起こしジョブを開始
-      const transcriptionResponse = await fetch('/api/transcribe-chunks', {
+      // 統合された文字起こしジョブを開始（Cloud Runを使用）
+      const CLOUD_RUN_URL = 'https://darwin-project-574364248563.asia-northeast1.run.app';
+      const transcriptionResponse = await fetch(`${CLOUD_RUN_URL}/api/transcribe-chunks`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
