@@ -84,15 +84,25 @@ export default async function handler(req, res) {
       jobId,
       userId,
       sessionId,
-      chunks: chunks.map((chunk, index) => ({
-        ...chunk,
-        chunkId: chunk.chunkId || chunk.id || `chunk_${index}`,
-        cloudPath: chunk.cloudPath || `users/${userId}/sessions/${sessionId}/chunks/${chunk.chunkId || chunk.id || `chunk_${index}`}.wav`,
-        status: 'pending',
-        result: null,
-        error: null,
-        retryCount: 0
-      })),
+      chunks: chunks.map((chunk, index) => {
+        const chunkId = chunk.chunkId || chunk.id || `chunk_${index}`;
+        
+        // cloudPathが提供されていない場合はエラー
+        if (!chunk.cloudPath) {
+          console.error(`Missing cloudPath for chunk ${index}:`, chunk);
+          throw new Error(`Chunk ${index} (${chunkId}) にcloudPathが指定されていません`);
+        }
+        
+        return {
+          ...chunk,
+          chunkId,
+          cloudPath: chunk.cloudPath, // 必須
+          status: 'pending',
+          result: null,
+          error: null,
+          retryCount: 0
+        };
+      }),
       totalChunks: chunks.length,
       completedChunks: 0,
       status: 'initializing',
