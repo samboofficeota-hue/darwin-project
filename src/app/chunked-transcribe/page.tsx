@@ -196,6 +196,8 @@ export default function ChunkedTranscribePage() {
   const handleStartIntegratedTranscription = async () => {
     console.log('=== handleStartIntegratedTranscription START ===');
     setIsStartingTranscription(true);
+    // 既存のエラーメッセージをクリア
+    setError('');
 
     try {
       // すべてのアップロード結果を収集
@@ -213,12 +215,22 @@ export default function ChunkedTranscribePage() {
         throw new Error('アップロード済みのチャンクが見つかりません');
       }
 
+      // 成功したチャンクのみに限定（cloudPath必須）
+      const successfulChunks = allChunks.filter((c: any) => c?.status === 'success' && !!c?.cloudPath);
+      const failedCount = allChunks.length - successfulChunks.length;
+      if (failedCount > 0) {
+        console.warn(`Skipping ${failedCount} failed chunks. Proceeding with ${successfulChunks.length} successful chunks.`);
+      }
+      if (successfulChunks.length === 0) {
+        throw new Error('成功したチャンクがありません。アップロードに失敗しています。');
+      }
+
       console.log(`Starting integrated transcription with ${allChunks.length} chunks`);
       console.log('All chunks data:', allChunks);
       console.log('Sample chunk:', allChunks[0]);
 
       // チャンクデータを整形
-      const formattedChunks = allChunks.map((result, index) => ({
+      const formattedChunks = successfulChunks.map((result, index) => ({
         id: result.id || `chunk_${index}`,
         chunkId: result.chunkId || result.id,
         cloudPath: result.cloudPath,
@@ -493,6 +505,11 @@ export default function ChunkedTranscribePage() {
     setProgress(0);
 
     try {
+      // 成功したチャンクのみを送信
+      const okResults = uploadResults.filter(r => r?.status === 'success' && !!r?.cloudPath);
+      if (okResults.length === 0) {
+        throw new Error('成功したチャンクがありません。アップロードに失敗しています。');
+      }
       const response = await fetch('/api/transcribe-chunks', {
         method: 'POST',
         headers: {
@@ -501,7 +518,7 @@ export default function ChunkedTranscribePage() {
         body: JSON.stringify({
           userId,
           sessionId,
-          chunks: uploadResults.map(result => ({
+          chunks: okResults.map(result => ({
             id: result.id,
             chunkId: result.chunkId,
             cloudPath: result.cloudPath,

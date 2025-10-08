@@ -45,6 +45,31 @@ const storage = new Storage({
 
 const BUCKET_NAME = process.env.GCS_BUCKET_NAME || 'darwin-project-audio-files';
 
+// WAVヘッダからメタ情報を取得（サンプルレート等）
+function getWavInfo(buffer) {
+  try {
+    // 最低でも44バイト（標準WAVヘッダ）
+    if (!Buffer.isBuffer(buffer) || buffer.length < 44) {
+      return { sampleRate: null, channels: null, bitsPerSample: null };
+    }
+
+    // "RIFF" と "WAVE" を簡易確認
+    const riff = buffer.toString('ascii', 0, 4);
+    const wave = buffer.toString('ascii', 8, 12);
+    if (riff !== 'RIFF' || wave !== 'WAVE') {
+      return { sampleRate: null, channels: null, bitsPerSample: null };
+    }
+
+    const channels = buffer.readUInt16LE(22);        // 2 bytes
+    const sampleRate = buffer.readUInt32LE(24);       // 4 bytes
+    const bitsPerSample = buffer.readUInt16LE(34);    // 2 bytes
+
+    return { sampleRate, channels, bitsPerSample };
+  } catch (e) {
+    return { sampleRate: null, channels: null, bitsPerSample: null };
+  }
+}
+
 export default async function handler(req, res) {
   // CORS設定
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -240,6 +265,16 @@ async function transcribeChunk(chunk) {
     
     const [audioBuffer] = await file.download();
     console.log(`Downloaded ${audioBuffer.length} bytes from GCS`);
+
+    // WAVヘッダから実サンプルレートを取得し、STT設定へ反映
+    const wavInfo = getWavInfo(audioBuffer);
+    const detectedSampleRate = wavInfo.sampleRate || 48000; // フォールバック: 48kHz
+    if (wavInfo.sampleRate) {
+      console.log(`Detected WAV sampleRate=${wavInfo.sampleRate}, channels=${wavInfo.channels}, bits=${wavInfo.bitsPerSample}`);
+    } else {
+      console.warn('WAV header not detected. Falling back to 48000 Hz');
+    }
+
     const audioBytes = audioBuffer.toString('base64');
 
     // 音声設定
@@ -249,7 +284,7 @@ async function transcribeChunk(chunk) {
 
     const config = {
       encoding: 'LINEAR16',
-      sampleRateHertz: 48000, // アップロードされたファイルは48kHz
+      sampleRateHertz: detectedSampleRate,
       languageCode: 'ja-JP',
       alternativeLanguageCodes: ['en-US'],
       enableAutomaticPunctuation: true,
