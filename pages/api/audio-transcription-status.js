@@ -62,8 +62,8 @@ export default async function handler(req, res) {
       };
     }
 
-    // 処理中の場合はチャンクの詳細も含める
-    if (processingState.status === 'processing' && processingState.chunks) {
+    // チャンクの詳細も含める（processing だけでなく error 時も返す）
+    if (processingState.chunks && (processingState.status === 'processing' || processingState.status === 'error')) {
       response.chunks = processingState.chunks.map(chunk => ({
         id: chunk.id,
         startTime: chunk.startTime,
@@ -71,7 +71,9 @@ export default async function handler(req, res) {
         duration: chunk.duration,
         status: chunk.status,
         retryCount: chunk.retryCount,
-        error: chunk.error
+        error: chunk.error,
+        chunkId: chunk.chunkId,
+        cloudPath: chunk.cloudPath
       }));
     }
 
