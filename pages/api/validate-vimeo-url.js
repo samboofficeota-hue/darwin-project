@@ -3,6 +3,16 @@
  * リアルタイムでURLの有効性を確認し、動画プレビューを提供
  */
 
+import { getConfig, validateEnvironment } from '../../lib/config.js';
+
+// 設定の取得と検証
+const appConfig = getConfig();
+const validation = validateEnvironment();
+
+if (!validation.isValid) {
+  console.error('Environment validation failed:', validation.missing);
+}
+
 export default async function handler(req, res) {
   // CORS設定
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -81,15 +91,16 @@ async function validateAndGetVideoInfo(url) {
     const videoId = match[1];
     
     // Vimeo APIトークンの確認
-    if (!process.env.VIMEO_ACCESS_TOKEN) {
+    if (!appConfig.vimeo.accessToken) {
       throw new Error('Vimeo APIトークンが設定されていません');
     }
     
     // Vimeo APIを使用して動画情報を取得
     const response = await fetch(`https://api.vimeo.com/videos/${videoId}`, {
       headers: {
-        'Authorization': `Bearer ${process.env.VIMEO_ACCESS_TOKEN}`,
-        'Accept': 'application/vnd.vimeo.*+json;version=3.4'
+        'Authorization': `Bearer ${appConfig.vimeo.accessToken}`,
+        'Accept': `application/vnd.vimeo.*+json;version=${appConfig.vimeo.apiVersion}`,
+        'User-Agent': appConfig.vimeo.userAgent
       }
     });
 
@@ -111,10 +122,10 @@ async function validateAndGetVideoInfo(url) {
 
     const videoData = await response.json();
     
-    // 動画の長さをチェック（最大4時間）
-    const maxDuration = 4 * 60 * 60; // 4時間
-    if (videoData.duration > maxDuration) {
-      throw new Error('動画が長すぎます（最大4時間）');
+    // 動画の長さをチェック
+    if (videoData.duration > appConfig.audio.maxDuration) {
+      const maxHours = Math.floor(appConfig.audio.maxDuration / 3600);
+      throw new Error(`動画が長すぎます（最大${maxHours}時間）`);
     }
 
     // 動画の音声をチェック
