@@ -5,7 +5,9 @@
 
 import crypto from 'crypto';
 import { saveJobState, loadJobState, updateJobState } from '../../lib/storage.js';
-import { SpeechClient } from '@google-cloud/speech';
+import { getSpeechClient, buildRecognitionConfig } from '../../lib/google-speech.js';
+import { FFMPEG_PATH, FFPROBE_PATH, quoteForShell } from '../../lib/ffmpeg.js';
+import { rateLimit } from '../../lib/rate-limit.js';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import fs from 'fs';
@@ -13,11 +15,8 @@ import path from 'path';
 
 const execAsync = promisify(exec);
 
-// Google Cloud Speech-to-Text クライアントの初期化
-const speechClient = new SpeechClient({
-  projectId: process.env.GOOGLE_CLOUD_PROJECT_ID || 'whgc-project',
-  // CloudRunではサービスアカウントを自動的に使用
-});
+// Google Cloud Speech-to-Text クライアント
+const speechClient = getSpeechClient();
 
 export const config = {
   api: {
@@ -46,6 +45,13 @@ export default async function handler(req, res) {
 
   try {
     const { audioData, resume_job_id, audioInfo } = req.body;
+
+    // Rate limit per IP to prevent abuse
+    const ip = (req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').toString();
+    const allowed = await rateLimit(`transcribe:audio:${ip}`, { windowSec: 60, limit: 4 });
+    if (!allowed) {
+      return res.status(429).json({ error: 'リクエストが多すぎます。しばらくしてから再試行してください。' });
+    }
 
     console.log('Request received:', {
       hasAudioData: !!audioData,
@@ -330,7 +336,7 @@ async function processTranscriptionAsync(jobId) {
  */
 async function getAudioMetadata(audioPath) {
   try {
-    const { stdout } = await execAsync(`ffprobe -v quiet -print_format json -show_format -show_streams "${audioPath}"`);
+    const { stdout } = await execAsync(`${FFPROBE_PATH} -v quiet -print_format json -show_format -show_streams ${quoteForShell(audioPath)}`);
     const metadata = JSON.parse(stdout);
     
     const audioStream = metadata.streams.find(stream => stream.codec_type === 'audio');
@@ -384,7 +390,7 @@ async function splitAudioIntoChunks(audioPath, duration) {
 async function detectSilenceAndSplit(audioPath, duration) {
   try {
     // 無音部分を検出（-50dB以下、0.5秒以上）
-    const silenceCommand = `ffmpeg -i "${audioPath}" -af silencedetect=noise=-50dB:duration=0.5 -f null - 2>&1 | grep "silence_start"`;
+    const silenceCommand = `${FFMPEG_PATH} -i ${quoteForShell(audioPath)} -af silencedetect=noise=-50dB:duration=0.5 -f null - 2>&1 | grep "silence_start"`;
     const silenceOutput = await execAsync(silenceCommand);
     
     if (!silenceOutput || silenceOutput.trim() === '') {
@@ -524,7 +530,7 @@ async function createChunkFiles(audioPath, chunks) {
       // -ar 16000: サンプリングレートを16kHzに設定
       // -ac 1: モノラルに変換
       // -b:a 64k: ビットレートを64kbpsに設定（処理速度向上）
-      const command = `ffmpeg -i "${audioPath}" -ss ${chunk.startTime} -t ${chunk.duration} -ar 16000 -ac 1 -b:a 64k "${chunk.chunkPath}" -y`;
+      const command = `${FFMPEG_PATH} -i ${quoteForShell(audioPath)} -ss ${chunk.startTime} -t ${chunk.duration} -ar 16000 -ac 1 -b:a 64k ${quoteForShell(chunk.chunkPath)} -y`;
       await execAsync(command);
       console.log(`Created optimized chunk file: ${chunk.chunkPath}`);
     } catch (error) {
@@ -627,20 +633,20 @@ async function transcribeAudioChunk(chunk) {
       content: audioBytes,
     };
 
-    const config = {
+    const config = buildRecognitionConfig({
       encoding: 'MP3',
-      sampleRateHertz: 16000, // Google推奨の16kHzに変更
+      sampleRateHertz: 16000,
       languageCode: 'ja-JP',
       alternativeLanguageCodes: ['en-US'],
       enableAutomaticPunctuation: true,
       enableWordTimeOffsets: true,
       enableWordConfidence: true,
-      model: 'latest_long',
-      useEnhanced: true,
-      // 音声品質の最適化
-      audioChannelCount: 1, // モノラルに設定（処理速度向上）
+      diarization: true,
+      useEnhanced: false,
+      model: undefined,
+      audioChannelCount: 1,
       enableSeparateRecognitionPerChannel: false,
-    };
+    });
 
     // 文字起こしの実行
     const [operation] = await speechClient.longRunningRecognize({
