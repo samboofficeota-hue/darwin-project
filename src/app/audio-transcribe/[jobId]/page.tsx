@@ -5,6 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 
 interface TranscriptionResult {
   fullText: string;
+  rawText?: string;
+  enhanced?: boolean;
   averageConfidence: number;
   totalChunks: number;
   failedChunks: number;
@@ -31,12 +33,38 @@ export default function AudioTranscriptionResultPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string>('');
   const [showFullText, setShowFullText] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedText, setEditedText] = useState('');
+  const [showRawText, setShowRawText] = useState(false);
 
   useEffect(() => {
     if (jobId) {
       fetchJobStatus();
     }
   }, [jobId]);
+
+  useEffect(() => {
+    if (jobStatus?.result?.fullText && !editedText) {
+      setEditedText(jobStatus.result.fullText);
+    }
+  }, [jobStatus]);
+
+  // ポーリング: 処理中の場合は定期的にステータスを確認
+  useEffect(() => {
+    if (!jobStatus) return;
+
+    const isProcessing = jobStatus.status === 'initializing' || 
+                        jobStatus.status === 'processing';
+
+    if (isProcessing) {
+      console.log(`Job is ${jobStatus.status}, polling in 3 seconds...`);
+      const pollTimer = setTimeout(() => {
+        fetchJobStatus();
+      }, 3000); // 3秒ごとにポーリング
+
+      return () => clearTimeout(pollTimer);
+    }
+  }, [jobStatus]);
 
   const fetchJobStatus = async () => {
     try {
@@ -67,9 +95,10 @@ export default function AudioTranscriptionResultPage() {
   };
 
   const downloadText = () => {
-    if (!jobStatus?.result?.fullText) return;
+    const textToDownload = isEditing ? editedText : jobStatus?.result?.fullText;
+    if (!textToDownload) return;
     
-    const blob = new Blob([jobStatus.result.fullText], { type: 'text/plain' });
+    const blob = new Blob([textToDownload], { type: 'text/plain' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -78,6 +107,59 @@ export default function AudioTranscriptionResultPage() {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  const downloadWord = async () => {
+    const textToDownload = isEditing ? editedText : jobStatus?.result?.fullText;
+    if (!textToDownload) return;
+
+    try {
+      const response = await fetch('/api/generate-word', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          text: textToDownload,
+          jobId: jobId,
+          metadata: {
+            duration: jobStatus?.result?.duration,
+            confidence: jobStatus?.result?.averageConfidence,
+            totalChunks: jobStatus?.result?.totalChunks
+          }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('WORD形式への変換に失敗しました');
+      }
+
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `transcription_${jobId}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading Word:', error);
+      alert('WORD形式のダウンロードに失敗しました');
+    }
+  };
+
+  const handleSaveEdit = () => {
+    if (jobStatus?.result) {
+      jobStatus.result.fullText = editedText;
+    }
+    setIsEditing(false);
+    alert('編集内容が保存されました');
+  };
+
+  const handleCancelEdit = () => {
+    setEditedText(jobStatus?.result?.fullText || '');
+    setIsEditing(false);
   };
 
   if (loading) {
@@ -104,6 +186,70 @@ export default function AudioTranscriptionResultPage() {
             >
               戻る
             </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 処理中の表示
+  if (jobStatus.status === 'initializing' || jobStatus.status === 'processing') {
+    return (
+      <div className="min-h-screen bg-gray-50 py-8">
+        <div className="max-w-4xl mx-auto px-4">
+          <div className="bg-white rounded-lg shadow-lg p-8">
+            <div className="text-center">
+              <h1 className="text-3xl font-bold text-gray-900 mb-4">文字起こし処理中</h1>
+              <p className="text-gray-600 mb-2">ジョブID: {jobId}</p>
+              <p className="text-gray-500 text-sm mb-8">処理が完了するまでお待ちください...</p>
+
+              {/* ステータス表示 */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
+                <div className="flex items-center justify-center mb-4">
+                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
+                </div>
+                <p className="text-blue-800 font-medium mb-2">
+                  {jobStatus.status === 'initializing' ? '初期化中...' : '文字起こし処理中...'}
+                </p>
+                <p className="text-blue-600 text-sm">
+                  {jobStatus.progress !== undefined ? `進捗: ${jobStatus.progress}%` : '処理中...'}
+                </p>
+              </div>
+
+              {/* 進捗バー */}
+              {jobStatus.progress !== undefined && (
+                <div className="mb-6">
+                  <div className="bg-gray-200 rounded-full h-4 overflow-hidden">
+                    <div 
+                      className="bg-blue-600 h-4 rounded-full transition-all duration-500"
+                      style={{ width: `${jobStatus.progress}%` }}
+                    ></div>
+                  </div>
+                  <p className="text-sm text-gray-600 mt-2">
+                    {jobStatus.completedChunks || 0} / {jobStatus.totalChunks || 0} チャンク完了
+                  </p>
+                </div>
+              )}
+
+              {/* 処理情報 */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-left">
+                <h3 className="text-sm font-medium text-gray-700 mb-2">処理情報</h3>
+                <div className="space-y-1 text-sm text-gray-600">
+                  <p>• ステータス: {jobStatus.status}</p>
+                  {jobStatus.totalChunks && (
+                    <p>• 総チャンク数: {jobStatus.totalChunks}個</p>
+                  )}
+                  {jobStatus.lastUpdate && (
+                    <p>• 最終更新: {new Date(jobStatus.lastUpdate).toLocaleString('ja-JP')}</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="mt-8 text-sm text-gray-500">
+                <p>このページは自動的に更新されます。</p>
+                <p>処理が完了するまで、このページを閉じないでください。</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -183,48 +329,96 @@ export default function AudioTranscriptionResultPage() {
           {/* 文字起こしテキスト */}
           {result && (
             <div className="space-y-6">
-              <div className="flex justify-between items-center">
-                <h2 className="text-xl font-medium text-gray-900">文字起こしテキスト</h2>
-                <div className="space-x-2">
-                  <button
-                    onClick={() => copyToClipboard(result.fullText)}
-                    className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
-                  >
-                    コピー
-                  </button>
-                  <button
-                    onClick={downloadText}
-                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-                  >
-                    ダウンロード
-                  </button>
+              <div className="flex justify-between items-center flex-wrap gap-4">
+                <h2 className="text-xl font-medium text-gray-900">
+                  文字起こしテキスト
+                  {result.enhanced && (
+                    <span className="ml-2 text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
+                      ✨ 整形済み
+                    </span>
+                  )}
+                </h2>
+                <div className="flex gap-2 flex-wrap">
+                  {!isEditing && (
+                    <>
+                      <button
+                        onClick={() => setIsEditing(true)}
+                        className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
+                      >
+                        ✏️ 編集
+                      </button>
+                      <button
+                        onClick={() => copyToClipboard(result.fullText)}
+                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                      >
+                        📋 コピー
+                      </button>
+                      <button
+                        onClick={downloadText}
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                      >
+                        📄 TXT
+                      </button>
+                      <button
+                        onClick={downloadWord}
+                        className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium"
+                      >
+                        📝 WORD
+                      </button>
+                    </>
+                  )}
+                  {isEditing && (
+                    <>
+                      <button
+                        onClick={handleSaveEdit}
+                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                      >
+                        💾 保存
+                      </button>
+                      <button
+                        onClick={handleCancelEdit}
+                        className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm"
+                      >
+                        ❌ キャンセル
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
 
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
-                <div className="max-h-96 overflow-y-auto">
-                  {showFullText ? (
-                    <pre className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed">
-                      {result.fullText}
-                    </pre>
-                  ) : (
-                    <pre className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed">
-                      {result.fullText.length > 1000 
-                        ? result.fullText.substring(0, 1000) + '...'
-                        : result.fullText
-                      }
-                    </pre>
-                  )}
+              {/* 元のテキストと整形後の比較 */}
+              {result.rawText && result.enhanced && !isEditing && (
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setShowRawText(!showRawText)}
+                    className="px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hover:bg-gray-300"
+                  >
+                    {showRawText ? '整形後を表示' : '元のテキストを表示'}
+                  </button>
                 </div>
-                
-                {result.fullText.length > 1000 && (
-                  <div className="mt-4 text-center">
-                    <button
-                      onClick={() => setShowFullText(!showFullText)}
-                      className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 text-sm"
-                    >
-                      {showFullText ? '短縮表示' : '全文表示'}
-                    </button>
+              )}
+
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
+                {isEditing ? (
+                  <div className="space-y-4">
+                    <div className="text-sm text-gray-600 mb-2">
+                      テキストを自由に編集できます。編集後は「保存」ボタンをクリックしてください。
+                    </div>
+                    <textarea
+                      value={editedText}
+                      onChange={(e) => setEditedText(e.target.value)}
+                      className="w-full h-96 p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm leading-relaxed"
+                      style={{ resize: 'vertical' }}
+                    />
+                    <div className="text-sm text-gray-600">
+                      文字数: {editedText.length.toLocaleString()}文字
+                    </div>
+                  </div>
+                ) : (
+                  <div className="max-h-[600px] overflow-y-auto">
+                    <pre className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed">
+                      {showRawText && result.rawText ? result.rawText : result.fullText}
+                    </pre>
                   </div>
                 )}
               </div>
@@ -261,3 +455,4 @@ export default function AudioTranscriptionResultPage() {
     </div>
   );
 }
+

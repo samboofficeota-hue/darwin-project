@@ -6,6 +6,7 @@
 import { SpeechClient } from '@google-cloud/speech';
 import { Storage } from '@google-cloud/storage';
 import { saveJobState, loadJobState } from '../../lib/storage.js';
+import { enhanceText } from '../../lib/text-processor.js';
 
 // Google Cloud クライアントの初期化
 const speechClient = new SpeechClient({
@@ -78,8 +79,10 @@ export default async function handler(req, res) {
       jobId,
       userId,
       sessionId,
-      chunks: chunks.map(chunk => ({
+      chunks: chunks.map((chunk, index) => ({
         ...chunk,
+        chunkId: chunk.chunkId || chunk.id || `chunk_${index}`,
+        cloudPath: chunk.cloudPath || `users/${userId}/sessions/${sessionId}/chunks/${chunk.chunkId || chunk.id || `chunk_${index}`}.wav`,
         status: 'pending',
         result: null,
         error: null,
@@ -163,7 +166,23 @@ async function processTranscriptionAsync(jobId) {
     }
 
     // 結果を統合
-    const finalResult = mergeTranscriptionResults(processingState.chunks);
+    const mergedResult = mergeTranscriptionResults(processingState.chunks);
+    
+    // Phase 3: テキストの高度な整形を適用
+    console.log('Enhancing transcription text...');
+    const enhancedText = enhanceText(mergedResult.fullText, {
+      removeFillers: true,
+      fixChunkBoundaries: true,
+      improveReadability: true,
+      addParagraphs: true
+    });
+    
+    const finalResult = {
+      ...mergedResult,
+      fullText: enhancedText,
+      rawText: mergedResult.fullText, // 元のテキストも保存
+      enhanced: true
+    };
     
     // 処理完了
     processingState.status = 'completed';
@@ -204,7 +223,7 @@ async function transcribeChunk(chunk) {
 
     const config = {
       encoding: 'LINEAR16',
-      sampleRateHertz: 16000,
+      sampleRateHertz: 48000, // アップロードされたファイルは48kHz
       languageCode: 'ja-JP',
       alternativeLanguageCodes: ['en-US'],
       enableAutomaticPunctuation: true,
@@ -259,7 +278,12 @@ function mergeTranscriptionResults(chunks) {
   const successfulResults = chunks
     .filter(chunk => chunk.status === 'completed' && chunk.result)
     .map(chunk => chunk.result)
-    .sort((a, b) => a.chunkId.localeCompare(b.chunkId));
+    .sort((a, b) => {
+      // チャンクIDから数値を抽出して正しくソート
+      const aNum = parseInt(a.chunkId.match(/\d+/)?.[0] || '0');
+      const bNum = parseInt(b.chunkId.match(/\d+/)?.[0] || '0');
+      return aNum - bNum;
+    });
 
   const failedResults = chunks
     .filter(chunk => chunk.status === 'error')
@@ -271,11 +295,14 @@ function mergeTranscriptionResults(chunks) {
     throw new Error('すべてのチャンクの処理に失敗しました');
   }
 
-  // テキストを結合
+  // テキストを結合（チャンク間は改行で区切る）
   const fullText = successfulResults
     .map(chunk => chunk.text)
     .filter(text => text && text.trim().length > 0)
     .join('\n\n');
+
+  // 実際の総時間を計算（各チャンクのdurationを使用）
+  const totalDuration = successfulResults.reduce((sum, chunk) => sum + (chunk.duration || 180), 0);
 
   // 信頼度の計算
   const totalConfidence = successfulResults.length > 0 
@@ -287,7 +314,7 @@ function mergeTranscriptionResults(chunks) {
     averageConfidence: totalConfidence,
     totalChunks: successfulResults.length,
     failedChunks: failedResults.length,
-    duration: successfulResults.length * 300, // 5分 × チャンク数
+    duration: totalDuration,
     chunks: successfulResults,
     failedChunkErrors: failedResults,
     processed: true,

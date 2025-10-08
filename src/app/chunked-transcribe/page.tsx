@@ -255,6 +255,8 @@ export default function ChunkedTranscribePage() {
           sessionId: `${sessionId}_${fileId}`,
           chunks: uploadResults.map(result => ({
             id: result.id,
+            chunkId: result.chunkId,
+            cloudPath: result.cloudPath,
             startTime: result.startTime,
             endTime: result.endTime,
             duration: result.duration
@@ -430,6 +432,8 @@ export default function ChunkedTranscribePage() {
           sessionId,
           chunks: uploadResults.map(result => ({
             id: result.id,
+            chunkId: result.chunkId,
+            cloudPath: result.cloudPath,
             startTime: result.startTime,
             endTime: result.endTime,
             duration: result.duration

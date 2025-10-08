@@ -51,6 +51,8 @@ export default async function handler(req, res) {
     if (processingState.status === 'completed' && processingState.result) {
       response.result = {
         fullText: processingState.result.fullText,
+        rawText: processingState.result.rawText, // 元のテキスト
+        enhanced: processingState.result.enhanced, // 整形済みフラグ
         averageConfidence: processingState.result.averageConfidence,
         totalChunks: processingState.result.totalChunks,
         failedChunks: processingState.result.failedChunks,
