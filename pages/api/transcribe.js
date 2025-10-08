@@ -4,12 +4,25 @@
  */
 
 import { SpeechClient } from '@google-cloud/speech';
+import { getConfig, validateEnvironment } from '../../lib/config.js';
+import { SpeechAPIClient } from '../../lib/http-client.js';
+
+// 設定の取得と検証
+const appConfig = getConfig();
+const validation = validateEnvironment();
+
+if (!validation.isValid) {
+  console.error('Environment validation failed:', validation.missing);
+}
 
 // Google Cloud Speech-to-Text クライアントの初期化
 const speechClient = new SpeechClient({
-  projectId: process.env.GOOGLE_CLOUD_PROJECT_ID || 'whgc-project',
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS,
+  projectId: appConfig.googleCloud.projectId,
+  keyFilename: appConfig.googleCloud.credentials,
 });
+
+// リトライ機能付きSpeech APIクライアント
+const speechAPIClient = new SpeechAPIClient();
 
 export const config = {
   api: {
@@ -77,9 +90,9 @@ async function transcribeAudio(audioBuffer, format, startTime, duration) {
     };
 
     // 言語設定（日本語）
-    const config = {
+    const speechConfig = {
       encoding: getAudioEncoding(format),
-      sampleRateHertz: 44100,
+      sampleRateHertz: appConfig.audio.sampleRate,
       languageCode: 'ja-JP',
       alternativeLanguageCodes: ['en-US'], // 英語も対応
       enableAutomaticPunctuation: true,
@@ -89,16 +102,14 @@ async function transcribeAudio(audioBuffer, format, startTime, duration) {
       useEnhanced: true, // 高精度モード
     };
 
-    // 文字起こしの実行
-    const [operation] = await speechClient.longRunningRecognize({
+    // 文字起こしの実行（リトライ機能付き）
+    const request = {
       audio: audio,
-      config: config,
-    });
+      config: speechConfig,
+    };
 
-    console.log('Transcription operation started:', operation.name);
-
-    // 非同期処理の完了を待機
-    const [response] = await operation.promise();
+    console.log('Starting transcription with retry support...');
+    const response = await speechAPIClient.transcribeWithRetry(speechClient, request);
 
     // 結果の処理
     const results = response.results || [];

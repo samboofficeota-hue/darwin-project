@@ -5,12 +5,16 @@
  */
 
 import { loadJobState } from '../../lib/storage.js';
+import { InputValidator, PrivacyProtection } from '../../lib/security.js';
 
 export default async function handler(req, res) {
-  // CORS設定
+  // セキュリティヘッダー設定
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('X-XSS-Protection', '1; mode=block');
 
   if (req.method === 'OPTIONS') {
     res.status(200).end();
@@ -28,6 +32,13 @@ export default async function handler(req, res) {
       return res.status(400).json({ error: 'ジョブIDが必要です' });
     }
 
+    // ジョブIDの検証
+    try {
+      InputValidator.validateJobId(job_id);
+    } catch (validationError) {
+      return res.status(400).json({ error: validationError.message });
+    }
+
     // Redisからジョブ情報を取得
     const jobStatus = await getJobStatus(job_id);
 
@@ -35,7 +46,8 @@ export default async function handler(req, res) {
       return res.status(404).json({ error: 'ジョブが見つかりません' });
     }
 
-    res.status(200).json({
+    // レスポンスデータから個人情報をマスク
+    const responseData = {
       jobId: job_id,
       status: jobStatus.status,
       progress: jobStatus.progress,
@@ -44,9 +56,11 @@ export default async function handler(req, res) {
       lastUpdate: jobStatus.lastUpdate,
       estimatedCompletion: jobStatus.estimatedCompletion,
       error: jobStatus.error,
-      result: jobStatus.result,
+      result: jobStatus.result ? PrivacyProtection.maskPersonalInfo(jobStatus.result) : null,
       canResume: jobStatus.status === 'error' || jobStatus.status === 'paused'
-    });
+    };
+
+    res.status(200).json(responseData);
 
   } catch (error) {
     console.error('Status check error:', error);
