@@ -324,7 +324,10 @@ export default function ChunkedTranscribePage() {
         }));
       };
 
-      const uploadResults = await uploadChunksWithSignedUrl(audioChunks, userId, sessionId, onUploadProgress);
+      // 各ファイルごとにユニークなセッションIDを使用（チャンクの上書きを防ぐ）
+      const uniqueSessionId = `${sessionId}_${fileId}`;
+      console.log(`Using unique session ID: ${uniqueSessionId}`);
+      const uploadResults = await uploadChunksWithSignedUrl(audioChunks, userId, uniqueSessionId, onUploadProgress);
       
       console.log(`Upload completed for ${fileId}: ${uploadResults.length} chunks`);
       
