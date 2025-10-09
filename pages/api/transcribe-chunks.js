@@ -178,33 +178,54 @@ async function processTranscriptionAsync(jobId) {
 
     console.log(`Processing ${processingState.totalChunks} chunks for job: ${jobId}`);
 
-    // 各チャンクを順次処理
-    for (let i = 0; i < processingState.chunks.length; i++) {
-      const chunk = processingState.chunks[i];
+    // 並列処理の設定（安全性重視）
+    const CONCURRENCY_LIMIT = 5; // 同時に処理するチャンク数（安定性を重視）
+    const chunks = processingState.chunks;
+    
+    // チャンクをバッチに分割
+    for (let batchStart = 0; batchStart < chunks.length; batchStart += CONCURRENCY_LIMIT) {
+      const batchEnd = Math.min(batchStart + CONCURRENCY_LIMIT, chunks.length);
+      const batch = chunks.slice(batchStart, batchEnd);
       
-      try {
-        console.log(`Processing chunk ${i + 1}/${processingState.totalChunks}: ${chunk.chunkId}`);
+      console.log(`Processing batch ${Math.floor(batchStart / CONCURRENCY_LIMIT) + 1}: chunks ${batchStart + 1}-${batchEnd} (${batch.length} chunks in parallel)`);
+      
+      // バッチ内のチャンクを並列処理
+      const batchPromises = batch.map(async (chunk, index) => {
+        const chunkIndex = batchStart + index;
         
-        // チャンクの文字起こし
-        const result = await transcribeChunk(chunk);
-        
-        chunk.status = 'completed';
-        chunk.result = result;
-        chunk.error = null;
-        processingState.completedChunks++;
-        processingState.progress = Math.round((processingState.completedChunks / processingState.totalChunks) * 100);
-        processingState.lastUpdate = new Date().toISOString();
-        await saveJobState(jobId, processingState);
-        
-        console.log(`Chunk ${chunk.chunkId} completed successfully`);
-        
-      } catch (error) {
-        console.error(`Chunk ${chunk.chunkId} failed:`, error);
-        chunk.status = 'error';
-        chunk.error = error.message;
-        processingState.lastUpdate = new Date().toISOString();
-        await saveJobState(jobId, processingState);
-      }
+        try {
+          console.log(`[Batch] Processing chunk ${chunkIndex + 1}/${processingState.totalChunks}: ${chunk.chunkId}`);
+          
+          // チャンクの文字起こし（並列実行）
+          const result = await transcribeChunk(chunk);
+          
+          chunk.status = 'completed';
+          chunk.result = result;
+          chunk.error = null;
+          
+          console.log(`[Batch] Chunk ${chunk.chunkId} completed successfully`);
+          
+          return { success: true, chunk };
+          
+        } catch (error) {
+          console.error(`[Batch] Chunk ${chunk.chunkId} failed:`, error);
+          chunk.status = 'error';
+          chunk.error = error.message;
+          
+          return { success: false, chunk, error };
+        }
+      });
+      
+      // バッチの完了を待機
+      await Promise.all(batchPromises);
+      
+      // バッチ完了後に進捗を更新
+      processingState.completedChunks = chunks.filter(c => c.status === 'completed').length;
+      processingState.progress = Math.round((processingState.completedChunks / processingState.totalChunks) * 100);
+      processingState.lastUpdate = new Date().toISOString();
+      await saveJobState(jobId, processingState);
+      
+      console.log(`Batch completed: ${processingState.completedChunks}/${processingState.totalChunks} chunks done (${processingState.progress}%)`);
     }
 
     // 結果を統合
