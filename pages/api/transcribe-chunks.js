@@ -253,7 +253,7 @@ async function transcribeChunk(chunk) {
     console.log(`Cloud Path: ${chunk.cloudPath}`);
     console.log(`Bucket Name: ${BUCKET_NAME}`);
     
-    // Cloud Storageからファイルをダウンロード
+    // Cloud Storageから直接読み取る（URIを使用）
     const bucket = storage.bucket(BUCKET_NAME);
     const file = bucket.file(chunk.cloudPath);
     
@@ -265,30 +265,26 @@ async function transcribeChunk(chunk) {
       throw new Error(`ファイルが見つかりません: ${chunk.cloudPath} in bucket ${BUCKET_NAME}`);
     }
     
-    const [audioBuffer] = await file.download();
-    console.log(`Downloaded ${audioBuffer.length} bytes from GCS`);
+    // ファイルサイズを確認（ログ用）
+    const [metadata] = await file.getMetadata();
+    console.log(`File size: ${metadata.size} bytes (${(metadata.size / 1024 / 1024).toFixed(2)} MB)`);
+    
+    // Cloud Storage URIを使用（ファイルをダウンロードしない）
+    const gcsUri = `gs://${BUCKET_NAME}/${chunk.cloudPath}`;
+    console.log(`Using GCS URI: ${gcsUri}`);
 
-    // WAVヘッダから実サンプルレートを取得し、STT設定へ反映
-    const wavInfo = getWavInfo(audioBuffer);
-    const detectedSampleRate = wavInfo.sampleRate || 48000; // フォールバック: 48kHz
-    if (wavInfo.sampleRate) {
-      console.log(`Detected WAV sampleRate=${wavInfo.sampleRate}, channels=${wavInfo.channels}, bits=${wavInfo.bitsPerSample}`);
-    } else {
-      console.warn('WAV header not detected. Falling back to 48000 Hz');
-    }
-
-    const audioBytes = audioBuffer.toString('base64');
-
-    // 音声設定
+    // 音声設定（URIを使用）
     const audio = {
-      content: audioBytes,
+      uri: gcsUri,
     };
 
+    // URIを使用する場合は、サンプルレートを指定
+    // 一般的なWAVファイルは48000Hzまたは44100Hz
     const config = {
       encoding: 'LINEAR16',
-      sampleRateHertz: detectedSampleRate,
+      sampleRateHertz: 48000, // 標準的なサンプルレート
       languageCode: 'ja-JP',
-      // 安全な最小構成。拡張モデル指定は一旦外す
+      // 安全な最小構成
       enableAutomaticPunctuation: true,
       enableWordTimeOffsets: true,
       enableWordConfidence: true,
