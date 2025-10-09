@@ -71,7 +71,7 @@ export default function AudioTranscriptionResultPage() {
 
   const fetchJobStatus = async () => {
     try {
-      // Cloud Run のエンドポイントを使用（transcribe-chunksで作成したジョブを取得）
+      // Cloud Run のエンドポイントを使用してジョブステータスを取得
       const CLOUD_RUN_URL = 'https://darwin-project-574364248563.asia-northeast1.run.app';
       const response = await fetch(`${CLOUD_RUN_URL}/api/audio-transcription-status?jobId=${jobId}`);
       const data = await response.json();
@@ -79,6 +79,14 @@ export default function AudioTranscriptionResultPage() {
       if (!response.ok) {
         throw new Error(data.error || 'ジョブ情報の取得に失敗しました');
       }
+
+      console.log('Job status fetched from Cloud Run:', {
+        jobId,
+        status: data.status,
+        progress: data.progress,
+        completedChunks: data.completedChunks,
+        totalChunks: data.totalChunks
+      });
 
       setJobStatus(data);
       setLoading(false);
