@@ -31,6 +31,15 @@ export default async function handler(req, res) {
     const { bucket, transcriptsDir } = gcsLecturePrefix(lectureId);
     const b = storage.bucket(bucket);
 
+    // バケット存在確認（わかりやすいエラーを返す）
+    const [bucketExists] = await b.exists();
+    if (!bucketExists) {
+      return res.status(400).json({
+        ok: false,
+        error: `GCSバケット ${bucket} が存在しません。GCS_BUCKET_NAME を正しいバケット名に設定するか、バケットを作成してください。`
+      });
+    }
+
     const now = new Date().toISOString();
     const rawPath = rawText ? `${transcriptsDir}raw/v${version}.txt` : null;
     const finalPath = `${transcriptsDir}final/v${version}.txt`;

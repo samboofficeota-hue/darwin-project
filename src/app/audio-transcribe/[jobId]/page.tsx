@@ -627,7 +627,7 @@ export default function AudioTranscriptionResultPage() {
                     <textarea
                       value={editedText}
                       onChange={(e) => setEditedText(e.target.value)}
-                      className="w-full h-96 p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm leading-relaxed"
+                      className="w-full h-96 p-4 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm leading-relaxed font-mono whitespace-pre-wrap"
                       style={{ resize: 'vertical' }}
                     />
                     <div className="text-sm text-gray-600">
@@ -636,7 +636,9 @@ export default function AudioTranscriptionResultPage() {
                   </div>
                 ) : (
                   <div className="max-h-[600px] overflow-y-auto">
-                    {renderTranscriptView()}
+                    <div className="whitespace-pre-wrap leading-relaxed text-sm">
+                      {renderTranscriptView()}
+                    </div>
                   </div>
                 )}
               </div>

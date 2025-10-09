@@ -14,9 +14,19 @@ export default async function handler(req, res) {
       return res.status(400).json({ ok: false, error: 'pairs is required' });
     }
 
-    // Create dictionary doc where each pair becomes a phrase with variants including the wrong form
-    const phrases = pairs.map(p => ({ text: p.to, variants: [p.from], boost }));
-    const payload = { scope, lectureId, phrases, updatedAt: new Date().toISOString() };
+    // バリデーション
+    const normalized = pairs
+      .filter(p => p && typeof p.from === 'string' && typeof p.to === 'string')
+      .map(p => ({ from: p.from.trim(), to: p.to.trim() }))
+      .filter(p => p.from.length > 0 && p.to.length > 0 && p.from !== p.to);
+
+    if (normalized.length === 0) {
+      return res.status(400).json({ ok: false, error: 'valid pairs not found' });
+    }
+
+    // 1ドキュメント＝複数フレーズとして保存
+    const phrases = normalized.map(p => ({ text: p.to, variants: [p.from], boost }));
+    const payload = { scope: lectureId ? 'lecture' : scope, lectureId, phrases, updatedAt: new Date().toISOString() };
     const created = await dbCreate('dictionaries', null, payload);
     res.status(200).json({ ok: true, id: created.id });
   } catch (error) {
