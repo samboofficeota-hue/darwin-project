@@ -23,7 +23,9 @@ const speechClient = new SpeechClient({
     auth_provider_x509_cert_url: 'https://www.googleapis.com/oauth2/v1/certs',
     client_x509_cert_url: `https://www.googleapis.com/robot/v1/metadata/x509/${encodeURIComponent(process.env.GOOGLE_CLIENT_EMAIL || '')}`,
     universe_domain: 'googleapis.com'
-  }
+  },
+  // gRPC の OpenSSL 依存を避けるため REST フォールバックを有効化
+  fallback: true
 });
 
 const storage = new Storage({

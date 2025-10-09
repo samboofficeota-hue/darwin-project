@@ -35,6 +35,7 @@ WORKDIR /app
 
 ENV NODE_ENV production
 ENV NEXT_TELEMETRY_DISABLED 1
+ENV NODE_OPTIONS --openssl-legacy-provider
 
 # Install FFmpeg and other runtime dependencies for audio processing
 RUN apk add --no-cache ffmpeg libc6-compat curl
