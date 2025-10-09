@@ -5,10 +5,7 @@
 
 import { Storage } from '@google-cloud/storage';
 
-// 環境変数の詳細ログ
-console.log('Private key length:', process.env.GOOGLE_PRIVATE_KEY?.length);
-console.log('Private key starts with:', process.env.GOOGLE_PRIVATE_KEY?.substring(0, 50));
-console.log('Private key contains newlines:', process.env.GOOGLE_PRIVATE_KEY?.includes('\\n'));
+// セキュリティ上、秘密鍵の内容はログに出さない
 
 // 環境変数からサービスアカウントキーを構築
 const serviceAccountKey = {
@@ -25,13 +22,8 @@ const serviceAccountKey = {
   universe_domain: 'googleapis.com'
 };
 
-console.log('Service account key:', {
-  type: serviceAccountKey.type,
-  project_id: serviceAccountKey.project_id,
-  client_email: serviceAccountKey.client_email,
-  private_key_length: serviceAccountKey.private_key?.length,
-  private_key_starts_with: serviceAccountKey.private_key?.substring(0, 50)
-});
+// 最小限のメタ情報のみログ
+console.log('Service account key configured for project:', serviceAccountKey.project_id);
 
 const storage = new Storage({
   projectId: process.env.GOOGLE_CLOUD_PROJECT_ID,
@@ -58,14 +50,7 @@ export default async function handler(req, res) {
     const { userId, sessionId, chunkId, operation = 'upload' } = req.body;
 
     console.log('Request body:', req.body);
-    console.log('Environment variables check:', {
-      GOOGLE_CLOUD_PROJECT_ID: process.env.GOOGLE_CLOUD_PROJECT_ID ? 'SET' : 'NOT SET',
-      GOOGLE_CLIENT_EMAIL: process.env.GOOGLE_CLIENT_EMAIL ? 'SET' : 'NOT SET',
-      GOOGLE_PRIVATE_KEY: process.env.GOOGLE_PRIVATE_KEY ? 'SET' : 'NOT SET',
-      GOOGLE_PRIVATE_KEY_ID: process.env.GOOGLE_PRIVATE_KEY_ID ? 'SET' : 'NOT SET',
-      GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID ? 'SET' : 'NOT SET',
-      GCS_BUCKET_NAME: process.env.GCS_BUCKET_NAME || 'darwin-project-audio-files'
-    });
+    // 必要最小限のチェックのみ
 
     // 環境変数の詳細チェック
     if (!process.env.GOOGLE_CLOUD_PROJECT_ID) {
@@ -78,17 +63,7 @@ export default async function handler(req, res) {
       throw new Error('GOOGLE_PRIVATE_KEY is not set');
     }
 
-    // 環境変数の詳細ログ（デバッグ用）
-    console.log('Environment variables details:', {
-      GOOGLE_CLOUD_PROJECT_ID: process.env.GOOGLE_CLOUD_PROJECT_ID,
-      GOOGLE_CLIENT_EMAIL: process.env.GOOGLE_CLIENT_EMAIL,
-      GOOGLE_PRIVATE_KEY_LENGTH: process.env.GOOGLE_PRIVATE_KEY?.length,
-      GOOGLE_PRIVATE_KEY_START: process.env.GOOGLE_PRIVATE_KEY?.substring(0, 30),
-      GOOGLE_PRIVATE_KEY_END: process.env.GOOGLE_PRIVATE_KEY?.substring(-30),
-      GOOGLE_PRIVATE_KEY_ID: process.env.GOOGLE_PRIVATE_KEY_ID,
-      GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
-      GCS_BUCKET_NAME: process.env.GCS_BUCKET_NAME
-    });
+    // 機密情報は出力しない
 
     if (!userId || !sessionId || !chunkId) {
       return res.status(400).json({ error: 'Missing required parameters' });

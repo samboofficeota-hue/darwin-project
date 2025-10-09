@@ -11,6 +11,8 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
+    "@google-cloud/datastore": "9.2.1",
+    "@google-cloud/firestore": "7.11.6",
     "@google-cloud/speech": "^6.0.0",
     "@google-cloud/storage": "^7.17.1",
     "@types/node": "20.10.5",

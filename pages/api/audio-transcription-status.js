@@ -58,7 +58,9 @@ export default async function handler(req, res) {
         failedChunks: processingState.result.failedChunks,
         duration: processingState.result.duration,
         successRate: processingState.result.successRate,
-        processed: processingState.result.processed
+        processed: processingState.result.processed,
+        // 低信頼語や話者分離の可視化のために、結果チャンク（単語情報含む）も返す
+        chunks: processingState.result.chunks || null
       };
     }
 

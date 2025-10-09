@@ -242,7 +242,7 @@ export default function ChunkedTranscribePage() {
       console.log('Formatted chunks sample:', formattedChunks[0]);
 
       // 統合された文字起こしジョブを開始（Cloud Runを使用）
-      const CLOUD_RUN_URL = 'https://darwin-project-574364248563.asia-northeast1.run.app';
+      const CLOUD_RUN_URL = process.env.NEXT_PUBLIC_API_URL || 'https://darwin-project-574364248563.asia-northeast1.run.app';
       const requestBody = {
         userId,
         sessionId: sessionId, // 統合セッションID
@@ -510,7 +510,9 @@ export default function ChunkedTranscribePage() {
       if (okResults.length === 0) {
         throw new Error('成功したチャンクがありません。アップロードに失敗しています。');
       }
-      const response = await fetch('/api/transcribe-chunks', {
+      const CLOUD_RUN = process.env.NEXT_PUBLIC_API_URL || '';
+      const endpoint = CLOUD_RUN ? `${CLOUD_RUN}/api/transcribe-chunks` : '/api/transcribe-chunks';
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

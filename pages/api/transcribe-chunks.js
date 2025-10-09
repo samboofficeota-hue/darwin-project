@@ -6,6 +6,7 @@
 import { SpeechClient } from '@google-cloud/speech';
 import { Storage } from '@google-cloud/storage';
 import { saveJobState, loadJobState } from '../../lib/storage.js';
+import { buildSpeechContexts } from '../../lib/hints.js';
 import { enhanceText } from '../../lib/text-processor.js';
 
 // Google Cloud クライアントの初期化
@@ -311,6 +312,18 @@ async function transcribeChunk(chunk) {
       enableWordConfidence: true,
     };
 
+    // Attach speech contexts if provided at chunk level
+    if (chunk.lectureId) {
+      try {
+        const contexts = await buildSpeechContexts({ lectureId: chunk.lectureId });
+        if (contexts && contexts.length > 0) {
+          config.speechContexts = contexts;
+        }
+      } catch (e) {
+        console.warn('Failed to build speech contexts for chunk:', chunk.chunkId, e.message);
+      }
+    }
+
     // 文字起こしの実行
     const [operation] = await speechClient.longRunningRecognize({
       audio: audio,
@@ -327,7 +340,11 @@ async function transcribeChunk(chunk) {
     const transcriptions = results.map(result => ({
       text: result.alternatives[0].transcript,
       confidence: result.alternatives[0].confidence,
-      words: result.alternatives[0].words || []
+      words: result.alternatives[0].words || [],
+      segments: result.alternatives[0].words ? [{
+        speakerTag: result.speakerTag || null,
+        words: result.alternatives[0].words
+      }] : []
     }));
 
     // 全体のテキストを結合

@@ -68,10 +68,26 @@ export default function LectureInfoPage() {
     setIsSubmitting(true);
 
     try {
-      // 講義情報をセッションストレージに保存
+      // Firestore/Datastoreに講演メタを作成
+      const res = await fetch('/api/lectures/create', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: lectureInfo.theme,
+          date: new Date().toISOString().slice(0,10),
+          speakers: [{ name: lectureInfo.speaker.name, title: lectureInfo.speaker.title, bio: lectureInfo.speaker.bio }],
+          slideUris: [],
+          status: 'draft'
+        })
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'failed');
+
+      // 作成した lectureId をセッションへ保持
+      sessionStorage.setItem('lectureId', json.id);
       sessionStorage.setItem('lectureInfo', JSON.stringify(lectureInfo));
-      
-      // Vimeo URL入力ページに遷移
+
+      // 次のステップへ
       router.push('/upload');
     } catch (error) {
       console.error('Error saving lecture info:', error);

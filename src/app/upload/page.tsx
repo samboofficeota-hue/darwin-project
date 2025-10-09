@@ -60,7 +60,7 @@ export default function UploadPage() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ 
-          vimeo_url: vimeoUrl,
+          vimeoUrl: vimeoUrl,
           lecture_info: lectureInfo
         }),
         signal: controller.signal

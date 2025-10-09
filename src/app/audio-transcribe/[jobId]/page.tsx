@@ -39,6 +39,11 @@ export default function AudioTranscriptionResultPage() {
   const [isEditing, setIsEditing] = useState(false);
   const [editedText, setEditedText] = useState('');
   const [showRawText, setShowRawText] = useState(false);
+  const [speakerMap, setSpeakerMap] = useState<{[key: string]: string}>({});
+  const [confidenceThreshold, setConfidenceThreshold] = useState(0.75);
+  const [headingCandidates, setHeadingCandidates] = useState<Array<{index:number,title:string}>>([]);
+  const [replaceFrom, setReplaceFrom] = useState('');
+  const [replaceTo, setReplaceTo] = useState('');
 
   useEffect(() => {
     if (jobId) {
@@ -89,6 +94,18 @@ export default function AudioTranscriptionResultPage() {
       });
 
       setJobStatus(data);
+      // Initialize speaker map from detected speaker tags if present
+      const detected = new Set<string>();
+      data?.result?.chunks?.forEach((c: any) => {
+        c?.segments?.forEach((s: any) => {
+          if (s.speakerTag) detected.add(`S${s.speakerTag}`);
+        });
+      });
+      if (detected.size > 0 && Object.keys(speakerMap).length === 0) {
+        const initial: {[k: string]: string} = {};
+        Array.from(detected).forEach(k => initial[k] = '');
+        setSpeakerMap(initial);
+      }
       setLoading(false);
     } catch (error) {
       console.error('Error fetching job status:', error);
@@ -174,6 +191,127 @@ export default function AudioTranscriptionResultPage() {
     setEditedText(jobStatus?.result?.fullText || '');
     setIsEditing(false);
   };
+
+  function renderTranscriptView() {
+    const r = jobStatus?.result;
+    if (!r) return null;
+
+    // If we don't have detailed segments, fallback to raw/full toggle
+    const hasSegments = Array.isArray((r as any).chunks);
+    if (!hasSegments) {
+      return (
+        <pre className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed">
+          {showRawText && r.rawText ? r.rawText : r.fullText}
+        </pre>
+      );
+    }
+
+    // Build a simple paragraph view combining segments; highlight low-confidence words;
+    // prepend speaker names if mapped.
+    const elements: any[] = [];
+    (r as any).chunks.forEach((chunk: any, ci: number) => {
+      const segs = chunk.segments || [];
+      segs.forEach((seg: any, si: number) => {
+        const speakerTag = seg.speakerTag ? `S${seg.speakerTag}` : '';
+        const speakerLabel = speakerTag && speakerMap[speakerTag] ? speakerMap[speakerTag] : speakerTag;
+        const words = (seg.words || []).map((w: any, wi: number) => {
+          const conf = typeof w.confidence === 'number' ? w.confidence : 1;
+          const isLow = conf < confidenceThreshold;
+          return (
+            <span key={`w-${ci}-${si}-${wi}`} className={isLow ? 'bg-yellow-200' : ''}>{w.word || w.text || ''}</span>
+          );
+        });
+
+        elements.push(
+          <div key={`seg-${ci}-${si}`} className="mb-2">
+            {speakerLabel && (
+              <span className="mr-2 text-xs px-2 py-1 bg-gray-200 rounded text-gray-700">{speakerLabel}</span>
+            )}
+            <span className="text-sm text-gray-800 leading-relaxed">{words}</span>
+          </div>
+        );
+      });
+    });
+
+    return <div className="text-sm">{elements}</div>;
+  }
+
+  async function handleSuggestHeadings() {
+    try {
+      const baseText = showRawText && jobStatus?.result?.rawText ? jobStatus.result.rawText : (jobStatus?.result?.fullText || '');
+      const res = await fetch('/api/headings/suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: baseText, style: 'bracket', maxHeadings: 12, apply: false })
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'failed');
+      setHeadingCandidates(json.headings || []);
+    } catch (e) {
+      alert('見出し候補の生成に失敗しました');
+    }
+  }
+
+  async function handleApplyHeadings() {
+    try {
+      const baseText = showRawText && jobStatus?.result?.rawText ? jobStatus.result.rawText : (jobStatus?.result?.fullText || '');
+      const res = await fetch('/api/headings/suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: baseText, style: 'bracket', maxHeadings: 12, apply: true })
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'failed');
+      setEditedText(json.text);
+      setIsEditing(true);
+    } catch (e) {
+      alert('見出しの挿入に失敗しました');
+    }
+  }
+
+  async function handlePersistFinal() {
+    try {
+      const lectureId = sessionStorage.getItem('lectureId') || '';
+      const res = await fetch('/api/transcripts/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lectureId,
+          rawText: jobStatus?.result?.rawText || '',
+          finalText: editedText || jobStatus?.result?.fullText || '',
+          version: 1,
+          stats: {
+            avgConfidence: jobStatus?.result?.averageConfidence || 0
+          },
+          sttConfig: {}
+        })
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'failed');
+      alert('クラウドへ確定版を保存しました');
+    } catch (e) {
+      alert('保存に失敗しました');
+    }
+  }
+
+  async function handleReplaceAndLearn() {
+    if (!replaceFrom || !replaceTo) return;
+    const newText = (editedText || '').split(replaceFrom).join(replaceTo);
+    setEditedText(newText);
+    try {
+      const lectureId = sessionStorage.getItem('lectureId') || null;
+      const res = await fetch('/api/dictionaries/learn', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lectureId, pairs: [{ from: replaceFrom, to: replaceTo }], scope: lectureId ? 'lecture' : 'global' })
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'failed');
+      alert('置換と学習を完了しました（次回以降にヒント適用）');
+      setReplaceFrom(''); setReplaceTo('');
+    } catch (e) {
+      alert('学習の保存に失敗しました');
+    }
+  }
 
   if (loading) {
     return (
@@ -341,7 +479,45 @@ export default function AudioTranscriptionResultPage() {
 
           {/* 文字起こしテキスト */}
           {result && (
-            <div className="space-y-6">
+              <div className="space-y-6">
+                {/* 話者名マッピング */}
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-yellow-800 mb-2">話者名マッピング（任意）</h3>
+                  <div className="flex flex-wrap gap-3">
+                    {Object.keys(speakerMap).length === 0 ? (
+                      <p className="text-yellow-700 text-sm">話者タグが検出されるとここに表示されます。</p>
+                    ) : (
+                      Object.entries(speakerMap).map(([tag, name]) => (
+                        <div key={tag} className="flex items-center gap-2">
+                          <span className="px-2 py-1 text-xs bg-yellow-200 text-yellow-900 rounded">{tag}</span>
+                          <input
+                            className="px-2 py-1 border rounded text-sm"
+                            placeholder="例: 上村さん"
+                            value={name}
+                            onChange={(e) => setSpeakerMap(prev => ({ ...prev, [tag]: e.target.value }))}
+                          />
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* 低信頼語ハイライト設定 */}
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-purple-800 mb-2">低信頼語のハイライト</h3>
+                  <div className="flex items-center gap-3 text-sm text-purple-700">
+                    <span>しきい値:</span>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={confidenceThreshold}
+                      onChange={(e) => setConfidenceThreshold(parseFloat(e.target.value))}
+                    />
+                    <span>{Math.round(confidenceThreshold * 100)}%</span>
+                  </div>
+                </div>
               <div className="flex justify-between items-center flex-wrap gap-4">
                 <h2 className="text-xl font-medium text-gray-900">
                   文字起こしテキスト
@@ -366,18 +542,36 @@ export default function AudioTranscriptionResultPage() {
                       >
                         📋 コピー
                       </button>
-                      <button
-                        onClick={downloadText}
-                        className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-                      >
-                        📄 TXT
-                      </button>
+                      <div className="relative inline-block">
+                        <button
+                          onClick={downloadText}
+                          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
+                          title="編集後テキストをTXTで保存"
+                        >
+                          📄 TXT
+                        </button>
+                      </div>
                       <button
                         onClick={downloadWord}
                         className="px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 text-sm font-medium"
+                        title="編集後テキストをWordで保存（要約なし）"
                       >
                         📝 WORD
                       </button>
+                      <button
+                        onClick={handleSuggestHeadings}
+                        className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 text-sm"
+                      >
+                        章見出しを提案
+                      </button>
+                      {headingCandidates.length > 0 && (
+                        <button
+                          onClick={handleApplyHeadings}
+                          className="px-4 py-2 bg-orange-500 text-white rounded-lg hover:bg-orange-600 text-sm"
+                        >
+                          章見出しを挿入
+                        </button>
+                      )}
                     </>
                   )}
                   {isEditing && (
@@ -387,6 +581,12 @@ export default function AudioTranscriptionResultPage() {
                         className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
                       >
                         💾 保存
+                      </button>
+                      <button
+                        onClick={handlePersistFinal}
+                        className="px-4 py-2 bg-teal-600 text-white rounded-lg hover:bg-teal-700 text-sm"
+                      >
+                        ☁️ クラウドへ確定保存
                       </button>
                       <button
                         onClick={handleCancelEdit}
@@ -417,6 +617,13 @@ export default function AudioTranscriptionResultPage() {
                     <div className="text-sm text-gray-600 mb-2">
                       テキストを自由に編集できます。編集後は「保存」ボタンをクリックしてください。
                     </div>
+                    <div className="flex flex-wrap items-end gap-2 bg-yellow-50 border border-yellow-200 p-3 rounded">
+                      <div className="text-sm text-yellow-800 font-medium mr-2">置換（辞書へ学習）</div>
+                      <input className="border rounded px-2 py-1 text-sm" placeholder="誤: 植村" value={replaceFrom} onChange={e=>setReplaceFrom(e.target.value)} />
+                      <span className="text-gray-500">→</span>
+                      <input className="border rounded px-2 py-1 text-sm" placeholder="正: 上村" value={replaceTo} onChange={e=>setReplaceTo(e.target.value)} />
+                      <button onClick={handleReplaceAndLearn} className="px-3 py-1 bg-yellow-600 text-white rounded text-sm">実行</button>
+                    </div>
                     <textarea
                       value={editedText}
                       onChange={(e) => setEditedText(e.target.value)}
@@ -429,12 +636,22 @@ export default function AudioTranscriptionResultPage() {
                   </div>
                 ) : (
                   <div className="max-h-[600px] overflow-y-auto">
-                    <pre className="whitespace-pre-wrap text-sm text-gray-800 leading-relaxed">
-                      {showRawText && result.rawText ? result.rawText : result.fullText}
-                    </pre>
+                    {renderTranscriptView()}
                   </div>
                 )}
               </div>
+
+              {/* 見出し候補の一覧 */}
+              {headingCandidates.length > 0 && !isEditing && (
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-orange-800 mb-2">見出し候補（本文は変更しません）</h3>
+                  <ol className="list-decimal pl-6 text-sm text-orange-900 space-y-1">
+                    {headingCandidates.map((h, i) => (
+                      <li key={i}>{h.title}</li>
+                    ))}
+                  </ol>
+                </div>
+              )}
 
               {/* 文字数統計 */}
               <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">

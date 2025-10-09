@@ -5,6 +5,7 @@
 
 import { SpeechClient } from '@google-cloud/speech';
 import { getConfig, validateEnvironment } from '../../lib/config.js';
+import { buildSpeechContexts } from '../../lib/hints.js';
 import { SpeechAPIClient } from '../../lib/http-client.js';
 
 // 設定の取得と検証
@@ -109,6 +110,18 @@ async function transcribeAudio(audioBuffer, format, startTime, duration) {
     };
 
     console.log('Starting transcription with retry support...');
+    // Optional: build and inject speech adaptation contexts if specified
+    if (req.query?.lectureId) {
+      try {
+        const contexts = await buildSpeechContexts({ lectureId: req.query.lectureId });
+        if (contexts && contexts.length > 0) {
+          request.config.speechContexts = contexts;
+        }
+      } catch (e) {
+        console.warn('Failed to build speech contexts:', e.message);
+      }
+    }
+
     const response = await speechAPIClient.transcribeWithRetry(speechClient, request);
 
     // 結果の処理
